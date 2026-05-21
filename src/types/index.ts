@@ -4,6 +4,9 @@ export interface FireStation {
   coverage: string; risk: "low" | "medium" | "high";
 }
 
+export type BroadRegion = "Central" | "North" | "East" | "West" | "North-East" | "South";
+export type WeatherSeverity = "clear" | "cloudy" | "light" | "heavy" | "storm";
+
 export type IncidentType = "fire" | "medical";
 export type IncidentSeverity = "low" | "medium" | "high";
 export type IncidentStatus = "active" | "responding" | "resolved";
@@ -24,7 +27,7 @@ export interface AIInsight {
 export type TrendDirection = "stable" | "degrading" | "improving";
 
 export interface Region {
-  name: string; health: number; stations: number;
+  name: BroadRegion; health: number; stations: number;
   avgResponse: number; trend: TrendDirection;
 }
 
@@ -51,4 +54,39 @@ export interface KPIData {
 export interface VolunteerZone {
   id: number; lat: number; lng: number;
   density: number; aedCount: number; responseProbability: number;
+}
+
+export interface WeatherRegionImpact {
+  region: BroadRegion;
+  severity: WeatherSeverity;
+  forecast: string;
+  rainfall: number;
+  penalty: number;
+  periodLabel: string;
+}
+
+export interface WeatherStationImpact {
+  stationId: number;
+  stationName: string;
+  region: BroadRegion;
+  severity: WeatherSeverity;
+  forecast: string;
+  forecastArea: string;
+  rainfall: number;
+  rainfallStation: string;
+  penalty: number;
+  periodLabel: string;
+}
+
+export interface WeatherSummary {
+  peakRainStation: string | null;
+  peakRainfall: number;
+  twoHourWindow: string | null;
+  topRegion: BroadRegion | null;
+  topRegionPenalty: number;
+  topRegionForecast: string | null;
+  twentyFourGeneralForecast: string | null;
+  twentyFourPeriodLabel: string | null;
+  temperatureRange: string | null;
+  updatedLabel: string | null;
 }

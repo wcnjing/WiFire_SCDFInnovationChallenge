@@ -1,12 +1,16 @@
 "use client";
 import { motion } from "framer-motion";
 import { Radio } from "lucide-react";
-import type { FireStation, TimeOffset } from "@/types";
+import type { FireStation, TimeOffset, WeatherStationImpact } from "@/types";
 import { getAdjustedResponseTime } from "@/lib/coverage";
 
-interface Props { station: FireStation | null; timeOffset: TimeOffset; }
+interface Props {
+  station: FireStation | null;
+  timeOffset: TimeOffset;
+  weatherImpact?: WeatherStationImpact | null;
+}
 
-export default function StationCard({ station, timeOffset }: Props) {
+export default function StationCard({ station, timeOffset, weatherImpact }: Props) {
   if (!station) return (
     <div className="p-5 text-center text-slate-400">
       <Radio size={20} className="mx-auto mb-2" />
@@ -14,7 +18,8 @@ export default function StationCard({ station, timeOffset }: Props) {
     </div>
   );
 
-  const adj = getAdjustedResponseTime(station, timeOffset);
+  const weatherPenalty = weatherImpact?.penalty ?? 0;
+  const adj = getAdjustedResponseTime(station, timeOffset, weatherPenalty);
   const rc = adj <= 8 ? "text-coverage-green" : adj <= 11 ? "text-coverage-amber" : "text-coverage-red";
   const rk = station.risk === "high" ? "text-coverage-red" : station.risk === "medium" ? "text-coverage-amber" : "text-coverage-green";
   const rc2 = station.readiness >= 85 ? "bg-green-50 text-green-600 border-green-200" : station.readiness >= 75 ? "bg-amber-50 text-amber-600 border-amber-200" : "bg-red-50 text-red-600 border-red-200";
@@ -43,10 +48,20 @@ export default function StationCard({ station, timeOffset }: Props) {
           <div className={`text-base font-bold font-mono ${rk}`}>{station.risk === "high" ? "High" : station.risk === "medium" ? "Med" : "Low"}</div>
         </div>
         <div className="p-2 bg-white rounded-lg">
-          <div className="text-[10px] text-slate-400">Risk Level</div>
-          <div className={`text-base font-bold font-mono ${rk}`}>{station.risk.charAt(0).toUpperCase() + station.risk.slice(1)}</div>
+          <div className="text-[10px] text-slate-400">Weather Impact</div>
+          <div className={`text-base font-bold font-mono ${weatherPenalty >= 1 ? "text-coverage-red" : weatherPenalty >= 0.45 ? "text-coverage-amber" : "text-coverage-green"}`}>
+            +{weatherPenalty.toFixed(1)}m
+          </div>
         </div>
       </div>
+      {weatherImpact && (
+        <div className="mt-2.5 p-2 bg-blue-50 rounded-lg border border-blue-100">
+          <p className="text-[11px] text-blue-700 font-medium">
+            {weatherImpact.forecastArea}: {weatherImpact.forecast} · Rainfall {weatherImpact.rainfall.toFixed(1)} mm near {weatherImpact.rainfallStation}
+          </p>
+          <p className="text-[10px] text-blue-500 mt-1">{weatherImpact.periodLabel}</p>
+        </div>
+      )}
       {station.risk === "high" && timeOffset >= 15 && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
           className="mt-2.5 p-2 bg-red-50 rounded-lg border border-red-100">

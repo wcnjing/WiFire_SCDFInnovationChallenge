@@ -21,6 +21,7 @@ interface Props {
   ltaSpeedBands?: LTASpeedBand[];
   neaStations?: NEAStation[];
   neaForecasts?: NEAForecast[];
+  stationWeatherPenalties?: Partial<Record<number, number>>;
 }
 
 function toSVG(lat: number, lng: number) {
@@ -34,6 +35,12 @@ function speedBandColor(band: number): string {
   if (band <= 4) return "#f97316"; // 10-29 km/h — moderate
   if (band <= 6) return "#eab308"; // 30-49 km/h — light
   return "#22c55e";                // 50+ km/h — free flow
+}
+
+function isPrimaryRoadCategory(category: string | number): boolean {
+  const numericCategory = typeof category === "number" ? category : Number(category);
+  if (Number.isFinite(numericCategory)) return numericCategory <= 4;
+  return category <= "C";
 }
 
 /* ── Simplified but recognisable Singapore outline ── */
@@ -101,6 +108,7 @@ export default function SingaporeMap({
   ltaSpeedBands,
   neaStations,
   neaForecasts,
+  stationWeatherPenalties = {},
 }: Props) {
   const [hovered, setHovered] = useState<number | null>(null);
 
@@ -212,7 +220,7 @@ export default function SingaporeMap({
         <g opacity={0.85}>
           {ltaSpeedBands && ltaSpeedBands.length > 0 ? (
             ltaSpeedBands
-              .filter((b: LTASpeedBand) => b.SpeedBand <= 5 && b.RoadCategory <= "C")
+              .filter((b: LTASpeedBand) => b.SpeedBand <= 5 && isPrimaryRoadCategory(b.RoadCategory))
               .map((b: LTASpeedBand) => {
                 const a = toSVG(parseFloat(b.StartLat), parseFloat(b.StartLon));
                 const c = toSVG(parseFloat(b.EndLat), parseFloat(b.EndLon));
@@ -308,7 +316,7 @@ export default function SingaporeMap({
       {/* ──── COVERAGE ISOCHRONES ──── */}
       {sPos.map(s => {
         const r = getR(s);
-        const c = getCoverageColors(s, timeOffset);
+        const c = getCoverageColors(s, timeOffset, stationWeatherPenalties[s.id] ?? 0);
         const sel = selectedStation?.id === s.id;
         return (
           <g key={`cov-${s.id}`}>
@@ -355,7 +363,7 @@ export default function SingaporeMap({
       {sPos.map(s => {
         const sel = selectedStation?.id === s.id;
         const hov = hovered === s.id;
-        const adj = getAdjustedResponseTime(s, timeOffset);
+        const adj = getAdjustedResponseTime(s, timeOffset, stationWeatherPenalties[s.id] ?? 0);
         return (
           <g key={`stn-${s.id}`} className="cursor-pointer"
             onMouseEnter={() => setHovered(s.id)} onMouseLeave={() => setHovered(null)}
