@@ -1,4 +1,4 @@
-import type { FireStation, Incident, AIInsight, Region, VolunteerZone } from "@/types";
+import type { FireStation, Incident, AIInsight, Region, VolunteerZone, TrafficLink } from "@/types";
 
 export const FIRE_STATIONS: FireStation[] = [
   { id: 1,  name: "Central Fire Station",       lat: 1.2966, lng: 103.8483, readiness: 95, avgResponse: 6.2, units: 4, coverage: "Central",    risk: "low" },

@@ -90,3 +90,16 @@ export interface WeatherSummary {
   temperatureRange: string | null;
   updatedLabel: string | null;
 }
+
+export interface TrafficLink {
+  LinkID: string;
+  Date: string;
+  HourOfDate: string;
+  Volume: string;
+  StartLon: string;
+  StartLat: string;
+  EndLon: string;
+  EndLat: string;
+  RoadName: string;
+  RoadCat: string;
+}

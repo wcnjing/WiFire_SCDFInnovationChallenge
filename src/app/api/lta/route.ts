@@ -10,6 +10,7 @@ const ENDPOINTS: Record<string, string> = {
   traveltimes: "EstTravelTimes",
   roadworks:   "RoadWorks",
   vms:         "VMS",
+  trafficflow: "TrafficFlow",
 };
 
 interface UpstreamResponse {
@@ -60,11 +61,34 @@ export async function GET(req: NextRequest) {
   if (!apiKey) return NextResponse.json({ error: "LTA_API_KEY not set" }, { status: 500 });
 
   try {
+    // 1. Fetch the initial pointer response from LTA Datamall
     const upstream = await fetchLTAResponse(`${LTA_BASE}/${endpoint}?$skip=${skip}`, apiKey);
     if (upstream.status < 200 || upstream.status >= 300) {
       return NextResponse.json({ error: `LTA ${upstream.status}` }, { status: upstream.status });
     }
+    
     const data = JSON.parse(upstream.body);
+
+    // 2. SPECIAL HANDLING FOR TRAFFIC FLOW:
+    // If it's trafficflow, look for the download URL link and fetch its contents directly!
+    if (dataset === "trafficflow") {
+      // LTA usually provides the link in data.value[0].Link or data.value
+      const downloadUrl = data.value?.[0]?.Link || data.value || data.Link;
+
+      if (downloadUrl && typeof downloadUrl === "string") {
+        console.log("Fetching actual traffic flow payload from secure blob link...");
+        const actualDataResponse = await fetch(downloadUrl);
+        const actualTrafficData = await actualDataResponse.json();
+        
+        // Return the actual inner data array directly to your frontend dashboard
+        return NextResponse.json({ 
+          value: actualTrafficData.Value || actualTrafficData.value || actualTrafficData || [], 
+          fetchedAt: Date.now() 
+        });
+      }
+    }
+
+    // Default fallback handling for standard endpoints (incidents, roadworks, etc.)
     return NextResponse.json({ value: data.value ?? [], fetchedAt: Date.now() });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
