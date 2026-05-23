@@ -6,14 +6,17 @@ import TopBar from "@/components/ui/TopBar";
 import PanelToggle from "@/components/ui/PanelToggle";
 import RightPanel from "@/components/panels/RightPanel";
 import SingaporeMap from "@/components/map/SingaporeMap";
-import { AIBanner, FloatingAlert, MapLegend } from "@/components/map/MapOverlays";
+import { AIBanner, FloatingAlert, MapLegend, TrafficCameraPreview } from "@/components/map/MapOverlays";
 import { useLTAIncidents, useLTASpeedBands, useLTATravelTimes } from "@/hooks/useLTAData";
+import { useLTATrafficImages } from "@/hooks/useLTATrafficImages";
 import { useOneMapRoute } from "@/hooks/useOneMapRoute";
 import { useNEAWeather } from "@/hooks/useNEAWeather";
 import { calculateAvgResponseTime, calculateOverallHealth, getAdjustedResponseTime } from "@/lib/coverage";
+import { buildTrafficCameraFocusPoints, rankTrafficCameraSnapshots } from "@/lib/trafficCameras";
 import { buildWeatherOperationalModel } from "@/lib/weather";
 import { buildSimulatedLTAIncidents, buildSimulatedLTASpeedBands, buildSimulatedNEAWeather } from "@/lib/fallbackData";
 import { SCENARIO_CONFIGS } from "@/lib/scenarios";
+import type { RankedTrafficCameraSnapshot } from "@/lib/trafficCameras";
 import type { OneMapRouteMode, RecommendedAction, ScenarioPreset, SourceStatus } from "@/types";
 
 function formatUpdatedLabel(timestamp: number | null | undefined) {
@@ -93,13 +96,23 @@ function getLTAStatus(params: {
 export default function HomePage() {
   const { state, actions, derived } = useAppState();
   const [routeIncidentId, setRouteIncidentId] = useState<number | null>(null);
+  const [focusedIncidentId, setFocusedIncidentId] = useState<number | null>(null);
+  const [focusIncidentRequestKey, setFocusIncidentRequestKey] = useState(0);
   const [routeMode, setRouteMode] = useState<OneMapRouteMode>("drive");
   const [scenario, setScenario] = useState<ScenarioPreset>("normal");
   const [showAIBanner, setShowAIBanner] = useState(true);
   const [showMapLegend, setShowMapLegend] = useState(true);
+  const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<RankedTrafficCameraSnapshot | null>(null);
   const { data: ltaIncidents, loading: ltaIncidentsLoading, error: ltaIncidentsError, fetchedAt: ltaIncidentsFetchedAt } = useLTAIncidents();
   const { data: ltaSpeedBands, loading: ltaSpeedBandsLoading, error: ltaSpeedBandsError, fetchedAt: ltaSpeedBandsFetchedAt } = useLTASpeedBands();
   const { data: ltaTravelTimes, loading: ltaTravelTimesLoading, error: ltaTravelTimesError, fetchedAt: ltaTravelTimesFetchedAt } = useLTATravelTimes();
+  const {
+    cameras: trafficCameras,
+    loading: trafficCameraLoading,
+    error: trafficCameraError,
+    lastUpdated: trafficCameraLastUpdated,
+    refetch: refetchTrafficCameras,
+  } = useLTATrafficImages();
   const { data: neaWeather, loading: neaWeatherLoading, error: neaWeatherError } = useNEAWeather();
 
   const simulatedNEAWeather = useMemo(() => buildSimulatedNEAWeather(), []);
@@ -157,6 +170,14 @@ export default function HomePage() {
     () => routeIncidents.find((incident) => incident.id === routeIncidentId) ?? routeIncidents[0] ?? null,
     [routeIncidents, routeIncidentId],
   );
+  const trafficCameraFocusPoints = useMemo(
+    () => buildTrafficCameraFocusPoints(state.selectedStation, routeIncidents, selectedRouteIncident?.id ?? routeIncidentId),
+    [routeIncidentId, routeIncidents, selectedRouteIncident?.id, state.selectedStation],
+  );
+  const mapTrafficCameras = useMemo(
+    () => rankTrafficCameraSnapshots(trafficCameras, trafficCameraFocusPoints, 6),
+    [trafficCameras, trafficCameraFocusPoints],
+  );
 
   const scenarioConfig = SCENARIO_CONFIGS[scenario];
 
@@ -174,6 +195,7 @@ export default function HomePage() {
   useEffect(() => {
     if (!routeIncidents.length) {
       setRouteIncidentId(null);
+      setFocusedIncidentId(null);
       return;
     }
 
@@ -181,6 +203,12 @@ export default function HomePage() {
       setRouteIncidentId(routeIncidents[0].id);
     }
   }, [routeIncidentId, routeIncidents]);
+
+  const focusIncidentOnMap = useCallback((incident: (typeof routeIncidents)[number]) => {
+    setRouteIncidentId(incident.id);
+    setFocusedIncidentId(incident.id);
+    setFocusIncidentRequestKey((current) => current + 1);
+  }, []);
 
   const applyScenario = useCallback((nextScenario: ScenarioPreset) => {
     const config = SCENARIO_CONFIGS[nextScenario];
@@ -317,6 +345,18 @@ export default function HomePage() {
 
   const sourceStatuses: SourceStatus[] = [ltaStatus, neaStatus];
 
+  useEffect(() => {
+    if (mapTrafficCameras.length === 0) {
+      setSelectedTrafficCamera(null);
+      return;
+    }
+
+    setSelectedTrafficCamera((current) => {
+      if (!current) return current;
+      return mapTrafficCameras.find((camera) => camera.cameraId === current.cameraId) ?? null;
+    });
+  }, [mapTrafficCameras]);
+
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <TopBar activeView={state.activeView} onViewChange={actions.setView} sourceStatuses={sourceStatuses} />
@@ -326,6 +366,8 @@ export default function HomePage() {
             <SingaporeMap
               stations={FIRE_STATIONS}
               incidents={derived.filteredIncidents}
+              focusedIncidentId={focusedIncidentId}
+              focusIncidentRequestKey={focusIncidentRequestKey}
               selectedStation={state.selectedStation}
               onStationClick={actions.selectStation}
               timeOffset={state.timeOffset}
@@ -340,6 +382,8 @@ export default function HomePage() {
               stationWeatherPenalties={weatherModel.stationPenalties}
               oneMapRoutePath={oneMapRoute?.path ?? []}
               oneMapRouteTarget={selectedRouteIncident}
+              trafficCameraSnapshots={mapTrafficCameras}
+              onTrafficCameraClick={setSelectedTrafficCamera}
             />
           </div>
 
@@ -372,6 +416,17 @@ export default function HomePage() {
               </button>
             )}
           </div>
+
+          {state.showTraffic && selectedTrafficCamera && (
+            <div className="pointer-events-none absolute inset-x-0 top-20 z-[1210] flex justify-center px-4">
+              <div className="pointer-events-auto">
+                <TrafficCameraPreview
+                  camera={selectedTrafficCamera}
+                  onClose={() => setSelectedTrafficCamera(null)}
+                />
+              </div>
+            </div>
+          )}
 
           <div className="absolute bottom-4 right-4 z-[1200]">
             <FloatingAlert
@@ -414,6 +469,12 @@ export default function HomePage() {
           oneMapRouteLoading={oneMapRouteLoading}
           oneMapRouteError={oneMapRouteError}
           oneMapRouteFetchedAt={oneMapRouteFetchedAt}
+          onFocusIncident={focusIncidentOnMap}
+          trafficCameras={trafficCameras}
+          trafficCameraLoading={trafficCameraLoading}
+          trafficCameraError={trafficCameraError}
+          trafficCameraLastUpdated={trafficCameraLastUpdated}
+          onRefreshTrafficCameras={refetchTrafficCameras}
         />
       </div>
     </div>

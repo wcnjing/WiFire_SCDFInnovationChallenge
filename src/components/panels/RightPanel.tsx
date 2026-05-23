@@ -15,6 +15,7 @@ import type {
   RecommendedAction,
   ScenarioPreset,
   SourceStatus,
+  TrafficCameraSnapshot,
 } from "@/types";
 import { FIRE_STATIONS, REGIONS } from "@/data/mock";
 import { SCENARIO_CONFIGS } from "@/lib/scenarios";
@@ -64,6 +65,12 @@ interface Props {
   oneMapRouteLoading: boolean;
   oneMapRouteError: string | null;
   oneMapRouteFetchedAt: number | null;
+  onFocusIncident: (incident: Incident) => void;
+  trafficCameras: TrafficCameraSnapshot[];
+  trafficCameraLoading: boolean;
+  trafficCameraError: string | null;
+  trafficCameraLastUpdated: string | null;
+  onRefreshTrafficCameras: () => void | Promise<void>;
 }
 
 function SectionShell({ title, children }: { title?: string; children: React.ReactNode }) {
@@ -140,6 +147,12 @@ export default function RightPanel({
   oneMapRouteLoading,
   oneMapRouteError,
   oneMapRouteFetchedAt,
+  onFocusIncident,
+  trafficCameras,
+  trafficCameraLoading,
+  trafficCameraError,
+  trafficCameraLastUpdated,
+  onRefreshTrafficCameras,
 }: Props) {
   const scenarioConfig = SCENARIO_CONFIGS[scenario];
   const kpis = [
@@ -167,6 +180,51 @@ export default function RightPanel({
               onFocusStation={onFocusStation}
             />
 
+            <SectionShell title="Traffic Conditions">
+              <div className="space-y-3">
+                <RoutePlannerCard
+                  station={selectedStation}
+                  incidents={incidents}
+                  selectedIncidentId={routeIncidentId}
+                  onIncidentChange={onRouteIncidentChange}
+                  routeMode={routeMode}
+                  onRouteModeChange={onRouteModeChange}
+                  route={oneMapRoute}
+                  loading={oneMapRouteLoading}
+                  error={oneMapRouteError}
+                  fetchedAt={oneMapRouteFetchedAt}
+                />
+                <IncidentSelector value={state.incidentType} onChange={onIncidentTypeChange} />
+                <IncidentFeed
+                  incidents={incidents}
+                  selectedIncidentId={routeIncidentId}
+                  onSelectIncident={onFocusIncident}
+                />
+              </div>
+            </SectionShell>
+
+            <SectionShell>
+              <MapLayers
+                showTraffic={state.showTraffic}
+                showWeather={state.showWeather}
+                showIncidents={state.showIncidents}
+                onToggleTraffic={onToggleTraffic}
+                onToggleWeather={onToggleWeather}
+                onToggleIncidents={onToggleIncidents}
+              />
+            </SectionShell>
+
+            <TrafficCameraPanel
+              selectedStation={selectedStation}
+              incidents={incidents}
+              selectedIncidentId={routeIncidentId}
+              cameras={trafficCameras}
+              loading={trafficCameraLoading}
+              error={trafficCameraError}
+              lastUpdated={trafficCameraLastUpdated}
+              onRefresh={onRefreshTrafficCameras}
+            />
+
             <SectionShell title="Operational Status">
               <div className="mb-3 flex flex-wrap gap-1.5">
                 <StatusBadge label="LTA" status={ltaStatus} />
@@ -188,38 +246,6 @@ export default function RightPanel({
 
             <SectionShell>
               <ScenarioControls value={scenario} onChange={onScenarioChange} />
-              <div className="mt-3">
-                <IncidentSelector value={state.incidentType} onChange={onIncidentTypeChange} />
-              </div>
-            </SectionShell>
-
-            <SectionShell>
-              <MapLayers
-                showTraffic={state.showTraffic}
-                showWeather={state.showWeather}
-                showIncidents={state.showIncidents}
-                onToggleTraffic={onToggleTraffic}
-                onToggleWeather={onToggleWeather}
-                onToggleIncidents={onToggleIncidents}
-              />
-            </SectionShell>
-
-            <SectionShell title="Traffic Conditions">
-              <div className="space-y-3">
-                <RoutePlannerCard
-                  station={selectedStation}
-                  incidents={incidents}
-                  selectedIncidentId={routeIncidentId}
-                  onIncidentChange={onRouteIncidentChange}
-                  routeMode={routeMode}
-                  onRouteModeChange={onRouteModeChange}
-                  route={oneMapRoute}
-                  loading={oneMapRouteLoading}
-                  error={oneMapRouteError}
-                  fetchedAt={oneMapRouteFetchedAt}
-                />
-                <IncidentFeed incidents={incidents} />
-              </div>
             </SectionShell>
 
             <SectionShell>
@@ -227,8 +253,6 @@ export default function RightPanel({
             </SectionShell>
 
             <ResponseCorridor3D />
-
-            <TrafficCameraPanel />
 
             <SectionShell>
               <WeatherOutlook

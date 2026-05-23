@@ -4,6 +4,7 @@ import type { CircleMarkerOptions, LayerGroup, Map as LeafletMap, PathOptions } 
 import type { FireStation, Incident, LatLng, TimeOffset, ViewMode } from "@/types";
 import { VOLUNTEER_ZONES } from "@/data/mock";
 import { getCoverageColors, getAdjustedResponseTime } from "@/lib/coverage";
+import type { RankedTrafficCameraSnapshot } from "@/lib/trafficCameras";
 import type { LTAIncident, LTASpeedBand } from "@/hooks/useLTAData";
 import type { NEAForecast, NEAStation } from "@/hooks/useNEAWeather";
 import { forecastSeverity } from "@/hooks/useNEAWeather";
@@ -11,6 +12,8 @@ import { forecastSeverity } from "@/hooks/useNEAWeather";
 interface Props {
   stations: FireStation[];
   incidents: Incident[];
+  focusedIncidentId?: number | null;
+  focusIncidentRequestKey?: number;
   selectedStation: FireStation | null;
   onStationClick: (s: FireStation) => void;
   timeOffset: TimeOffset;
@@ -25,6 +28,8 @@ interface Props {
   stationWeatherPenalties?: Partial<Record<number, number>>;
   oneMapRoutePath?: LatLng[];
   oneMapRouteTarget?: Incident | null;
+  trafficCameraSnapshots?: RankedTrafficCameraSnapshot[];
+  onTrafficCameraClick?: (camera: RankedTrafficCameraSnapshot) => void;
 }
 
 interface LayerGroups {
@@ -33,6 +38,7 @@ interface LayerGroups {
   incidents: LayerGroup;
   ltaIncidents: LayerGroup;
   traffic: LayerGroup;
+  trafficCameras: LayerGroup;
   weather: LayerGroup;
   route: LayerGroup;
   stations: LayerGroup;
@@ -109,9 +115,63 @@ function createPathOptions(options: PathOptions): PathOptions {
   };
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function trafficCameraPopupContent(camera: RankedTrafficCameraSnapshot) {
+  const toneLabel = camera.tone === "station" ? "station corridor" : "incident corridor";
+
+  return `
+    <div style="width:220px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;">
+        Traffic camera snapshot
+      </div>
+      <div style="margin-top:6px;font-size:15px;font-weight:700;color:#0f172a;">
+        Camera ${escapeHtml(camera.cameraId)}
+      </div>
+      <div style="margin-top:2px;font-size:12px;color:#475569;">
+        ${escapeHtml(camera.focusLabel)} · ${camera.distanceKm.toFixed(1)} km away
+      </div>
+      <img
+        src="${escapeHtml(camera.imageLink)}"
+        alt="Traffic camera snapshot ${escapeHtml(camera.cameraId)}"
+        style="margin-top:10px;width:100%;height:132px;object-fit:cover;border-radius:14px;border:1px solid #e2e8f0;background:#f8fafc;"
+      />
+      <div style="margin-top:8px;font-size:11px;color:#64748b;">
+        Snapshot from LTA DataMall for ${escapeHtml(toneLabel)} analysis
+      </div>
+      <div style="margin-top:4px;font-size:10px;color:#94a3b8;">
+        ${camera.latitude.toFixed(5)}, ${camera.longitude.toFixed(5)}
+      </div>
+    </div>
+  `;
+}
+
+function trafficCameraMarkerHtml(tone: RankedTrafficCameraSnapshot["tone"]) {
+  const border = tone === "station" ? "#2563eb" : "#f59e0b";
+  const shadow = tone === "station" ? "rgba(37, 99, 235, 0.24)" : "rgba(245, 158, 11, 0.24)";
+
+  return `
+    <div style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:9999px;background:#ffffff;border:2px solid ${border};box-shadow:0 10px 18px ${shadow};">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H9l1.1-1.6A2 2 0 0 1 11.76 3.5h.48a2 2 0 0 1 1.66.9L15 6h2.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-8Z" stroke="#0f172a" stroke-width="1.6" stroke-linejoin="round"/>
+        <circle cx="12" cy="12.5" r="3.25" stroke="#0f172a" stroke-width="1.6"/>
+      </svg>
+    </div>
+  `;
+}
+
 export default function SingaporeMap({
   stations,
   incidents,
+  focusedIncidentId = null,
+  focusIncidentRequestKey = 0,
   selectedStation,
   onStationClick,
   timeOffset,
@@ -126,6 +186,8 @@ export default function SingaporeMap({
   stationWeatherPenalties = {},
   oneMapRoutePath = [],
   oneMapRouteTarget = null,
+  trafficCameraSnapshots = [],
+  onTrafficCameraClick,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -167,18 +229,21 @@ export default function SingaporeMap({
       }).addTo(map);
 
       map.createPane("traffic");
+      map.createPane("trafficCameras");
       map.createPane("coverage");
       map.createPane("weather");
       map.createPane("route");
       map.createPane("stations");
 
       const trafficPane = map.getPane("traffic");
+      const trafficCamerasPane = map.getPane("trafficCameras");
       const coveragePane = map.getPane("coverage");
       const weatherPane = map.getPane("weather");
       const routePane = map.getPane("route");
       const stationsPane = map.getPane("stations");
 
       if (trafficPane) trafficPane.style.zIndex = "360";
+      if (trafficCamerasPane) trafficCamerasPane.style.zIndex = "440";
       if (coveragePane) coveragePane.style.zIndex = "380";
       if (weatherPane) weatherPane.style.zIndex = "390";
       if (routePane) routePane.style.zIndex = "410";
@@ -190,6 +255,7 @@ export default function SingaporeMap({
         incidents: L.layerGroup().addTo(map),
         ltaIncidents: L.layerGroup().addTo(map),
         traffic: L.layerGroup().addTo(map),
+        trafficCameras: L.layerGroup().addTo(map),
         weather: L.layerGroup().addTo(map),
         route: L.layerGroup().addTo(map),
         stations: L.layerGroup().addTo(map),
@@ -251,6 +317,33 @@ export default function SingaporeMap({
             .bindPopup(`${band.RoadName}: speed band ${band.SpeedBand}`)
             .addTo(layers.traffic);
         });
+
+      trafficCameraSnapshots.forEach((camera) => {
+        const marker = L.marker([camera.latitude, camera.longitude], {
+          pane: "trafficCameras",
+          interactive: true,
+          keyboard: true,
+          riseOnHover: true,
+          icon: L.divIcon({
+            className: "traffic-camera-marker",
+            html: trafficCameraMarkerHtml(camera.tone),
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
+            popupAnchor: [0, -18],
+          }),
+        });
+
+        marker
+          .bindPopup(trafficCameraPopupContent(camera), {
+            maxWidth: 240,
+            className: "traffic-camera-popup",
+          })
+          .on("click", () => {
+            marker.openPopup();
+            onTrafficCameraClick?.(camera);
+          })
+          .addTo(layers.trafficCameras);
+      });
     }
 
     if (showWeather) {
@@ -331,7 +424,12 @@ export default function SingaporeMap({
           className: "station-id-tooltip",
           opacity: 1,
         })
-        .on("click", () => onStationClick(station))
+        .on("click", () => {
+          onStationClick(station);
+          window.setTimeout(() => {
+            marker.openPopup();
+          }, 0);
+        })
         .addTo(layers.stations);
 
       if (isSelected) {
@@ -342,6 +440,7 @@ export default function SingaporeMap({
             color: "#2563eb",
             fillColor: "#2563eb",
             fillOpacity: 0.12,
+            interactive: false,
             weight: 2.5,
             pane: "stations",
             dashArray: "4 2",
@@ -354,6 +453,7 @@ export default function SingaporeMap({
             radius: 23,
             color: "#93c5fd",
             fillOpacity: 0,
+            interactive: false,
             weight: 1.5,
             pane: "stations",
             dashArray: "2 6",
@@ -382,17 +482,42 @@ export default function SingaporeMap({
 
     if (showIncidents) {
       incidents.forEach((incident) => {
-        L.circleMarker(
+        const isFocusedIncident = focusedIncidentId === incident.id;
+        const marker = L.circleMarker(
           [incident.lat, incident.lng],
           createCircleMarkerOptions({
-            radius: incident.severity === "high" ? 9 : incident.severity === "medium" ? 7 : 6,
+            radius: isFocusedIncident
+              ? 10
+              : incident.severity === "high"
+                ? 9
+                : incident.severity === "medium"
+                  ? 7
+                  : 6,
             color: "#ffffff",
             fillColor: incidentColor(incident),
+            weight: isFocusedIncident ? 2.5 : 1.5,
             pane: "stations",
           }),
         )
           .bindPopup(`${incident.desc}<br/>${incident.severity.toUpperCase()} | ${incident.status}`)
           .addTo(layers.incidents);
+
+        if (isFocusedIncident) {
+          L.circleMarker(
+            [incident.lat, incident.lng],
+            createCircleMarkerOptions({
+              radius: 16,
+              color: "#f97316",
+              fillColor: "#f97316",
+              fillOpacity: 0.12,
+              interactive: false,
+              weight: 2,
+              pane: "stations",
+            }),
+          ).addTo(layers.incidents);
+
+          marker.openPopup();
+        }
       });
 
       ltaIncidents.forEach((incident) => {
@@ -481,12 +606,23 @@ export default function SingaporeMap({
     stationWeatherPenalties,
     stations,
     timeOffset,
+    trafficCameraSnapshots,
+    onTrafficCameraClick,
   ]);
 
   useEffect(() => {
     const map = mapRef.current;
     const L = leafletRef.current;
     if (!map || !L) return;
+
+    const focusedIncident = focusedIncidentId
+      ? incidents.find((incident) => incident.id === focusedIncidentId) ?? null
+      : null;
+
+    if (focusedIncident && focusIncidentRequestKey > 0) {
+      map.flyTo([focusedIncident.lat, focusedIncident.lng], Math.max(map.getZoom(), 15), { duration: 0.7 });
+      return;
+    }
 
     if (oneMapRoutePath.length > 1) {
       map.fitBounds(L.latLngBounds(oneMapRoutePath.map((point) => [point.lat, point.lng] as [number, number])), {
@@ -499,7 +635,7 @@ export default function SingaporeMap({
     if (selectedStation) {
       map.flyTo([selectedStation.lat, selectedStation.lng], Math.max(map.getZoom(), 14), { duration: 0.6 });
     }
-  }, [oneMapRoutePath, selectedStation]);
+  }, [focusIncidentRequestKey, focusedIncidentId, incidents, oneMapRoutePath, selectedStation]);
 
   return <div ref={containerRef} className="onemap-map w-full h-full" aria-label="OneMap operational map" />;
 }

@@ -28,6 +28,22 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
   line-height: 1.45;
 }
 
+.traffic-camera-marker {
+  background: transparent;
+  border: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.traffic-camera-marker * {
+  pointer-events: none;
+}
+
+.traffic-camera-popup .leaflet-popup-content-wrapper {
+  border-radius: 18px;
+}
+
 .station-id-tooltip {
   background: transparent;
   border: 0;

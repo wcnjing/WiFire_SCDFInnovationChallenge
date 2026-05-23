@@ -1,8 +1,14 @@
 "use client";
-import { AlertTriangle, Flame, HeartPulse } from "lucide-react";
+import { AlertTriangle, Flame, HeartPulse, LocateFixed } from "lucide-react";
 import type { Incident } from "@/types";
 
-export default function IncidentFeed({ incidents }: { incidents: Incident[] }) {
+interface Props {
+  incidents: Incident[];
+  selectedIncidentId: number | null;
+  onSelectIncident: (incident: Incident) => void;
+}
+
+export default function IncidentFeed({ incidents, selectedIncidentId, onSelectIncident }: Props) {
   return (
     <div>
       <div className="mb-2 flex items-center gap-1.5">
@@ -13,7 +19,16 @@ export default function IncidentFeed({ incidents }: { incidents: Incident[] }) {
 
       <div className="space-y-1.5">
         {incidents.map((incident) => (
-          <div key={incident.id} className="flex items-center gap-2.5 rounded-xl border border-surface-100 bg-white px-3 py-2">
+          <button
+            key={incident.id}
+            type="button"
+            onClick={() => onSelectIncident(incident)}
+            className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors ${
+              selectedIncidentId === incident.id
+                ? "border-brand-200 bg-brand-50/60 shadow-sm"
+                : "border-surface-100 bg-white hover:border-slate-200 hover:bg-surface-50"
+            }`}
+          >
             <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${incident.type === "fire" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"}`}>
               {incident.type === "fire" ? <Flame size={14} /> : <HeartPulse size={14} />}
             </div>
@@ -21,10 +36,15 @@ export default function IncidentFeed({ incidents }: { incidents: Incident[] }) {
               <p className="truncate text-xs font-medium text-slate-800">{incident.desc}</p>
               <p className="mt-0.5 text-[10px] text-slate-400">{incident.severity} severity - {incident.timestamp}</p>
             </div>
-            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${incident.status === "active" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"}`}>
-              {incident.status}
-            </span>
-          </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${incident.status === "active" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"}`}>
+                {incident.status}
+              </span>
+              <div className={`rounded-full border p-1 ${selectedIncidentId === incident.id ? "border-brand-200 bg-white text-brand-700" : "border-surface-200 bg-white text-slate-400"}`}>
+                <LocateFixed size={12} />
+              </div>
+            </div>
+          </button>
         ))}
 
         {incidents.length === 0 && (
