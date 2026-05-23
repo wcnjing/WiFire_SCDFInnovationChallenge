@@ -1,19 +1,20 @@
 "use client";
-import { useMemo } from "react";
-import { FIRE_STATIONS, INCIDENTS, AI_INSIGHTS } from "@/data/mock";
+import { useEffect, useMemo, useState } from "react";
+import { FIRE_STATIONS, AI_INSIGHTS } from "@/data/mock";
 import { useAppState } from "@/hooks/useAppState";
 import TopBar from "@/components/ui/TopBar";
 import type { SourceStatus } from "@/components/ui/TopBar";
 import PanelToggle from "@/components/ui/PanelToggle";
-import LeftPanel from "@/components/panels/LeftPanel";
 import RightPanel from "@/components/panels/RightPanel";
 import SingaporeMap from "@/components/map/SingaporeMap";
 import { AIBanner, MapLegend, FloatingAlert } from "@/components/map/MapOverlays";
-import { useLTAIncidents, useLTASpeedBands } from "@/hooks/useLTAData";
+import { useLTAIncidents, useLTASpeedBands, useLTATravelTimes } from "@/hooks/useLTAData";
+import { useOneMapRoute } from "@/hooks/useOneMapRoute";
 import { useNEAWeather } from "@/hooks/useNEAWeather";
 import { calculateAvgResponseTime, calculateOverallHealth } from "@/lib/coverage";
 import { REGIONS } from "@/data/mock";
 import { buildWeatherOperationalModel } from "@/lib/weather";
+import type { OneMapRouteMode } from "@/types";
 
 function formatUpdatedLabel(timestamp: number | null | undefined) {
   if (!timestamp) return undefined;
@@ -27,14 +28,21 @@ function formatUpdatedLabel(timestamp: number | null | undefined) {
 function getLTAStatus(params: {
   incidentsLoading: boolean;
   speedBandsLoading: boolean;
+  travelTimesLoading: boolean;
   incidentsError: string | null;
   speedBandsError: string | null;
+  travelTimesError: string | null;
   incidentsFetchedAt: number | null;
   speedBandsFetchedAt: number | null;
+  travelTimesFetchedAt: number | null;
 }): SourceStatus {
-  const loading = params.incidentsLoading || params.speedBandsLoading;
-  const error = params.incidentsError ?? params.speedBandsError;
-  const fetchedAt = Math.max(params.incidentsFetchedAt ?? 0, params.speedBandsFetchedAt ?? 0) || null;
+  const loading = params.incidentsLoading || params.speedBandsLoading || params.travelTimesLoading;
+  const error = params.incidentsError ?? params.speedBandsError ?? params.travelTimesError;
+  const fetchedAt = Math.max(
+    params.incidentsFetchedAt ?? 0,
+    params.speedBandsFetchedAt ?? 0,
+    params.travelTimesFetchedAt ?? 0,
+  ) || null;
 
   if (fetchedAt) {
     return { label: "LTA", mode: error ? "stale" : "live", updatedLabel: formatUpdatedLabel(fetchedAt) };
@@ -57,8 +65,13 @@ function getNEAStatus(params: {
 
 export default function HomePage() {
   const { state, actions, derived } = useAppState();
+  const [routeIncidentId, setRouteIncidentId] = useState<number | null>(null);
+  const [routeMode, setRouteMode] = useState<OneMapRouteMode>("drive");
+  const [showAIBanner, setShowAIBanner] = useState(true);
+  const [showMapLegend, setShowMapLegend] = useState(true);
   const { data: ltaIncidents, loading: ltaIncidentsLoading, error: ltaIncidentsError, fetchedAt: ltaIncidentsFetchedAt } = useLTAIncidents();
   const { data: ltaSpeedBands, loading: ltaSpeedBandsLoading, error: ltaSpeedBandsError, fetchedAt: ltaSpeedBandsFetchedAt } = useLTASpeedBands();
+  const { data: ltaTravelTimes, loading: ltaTravelTimesLoading, error: ltaTravelTimesError, fetchedAt: ltaTravelTimesFetchedAt } = useLTATravelTimes();
   const { data: neaWeather, loading: neaWeatherLoading, error: neaWeatherError } = useNEAWeather();
   const weatherModel = useMemo(() => buildWeatherOperationalModel({
     stations: FIRE_STATIONS,
@@ -84,15 +97,47 @@ export default function HomePage() {
     () => [...weatherModel.insights, ...AI_INSIGHTS],
     [weatherModel.insights],
   );
+  const routeIncidents = useMemo(
+    () => derived.filteredIncidents,
+    [derived.filteredIncidents],
+  );
+  const selectedRouteIncident = useMemo(
+    () => routeIncidents.find((incident) => incident.id === routeIncidentId) ?? routeIncidents[0] ?? null,
+    [routeIncidents, routeIncidentId],
+  );
+  const {
+    data: oneMapRoute,
+    loading: oneMapRouteLoading,
+    error: oneMapRouteError,
+    fetchedAt: oneMapRouteFetchedAt,
+  } = useOneMapRoute({
+    start: state.selectedStation ? { lat: state.selectedStation.lat, lng: state.selectedStation.lng } : null,
+    end: selectedRouteIncident ? { lat: selectedRouteIncident.lat, lng: selectedRouteIncident.lng } : null,
+    mode: routeMode,
+  });
+
+  useEffect(() => {
+    if (!routeIncidents.length) {
+      setRouteIncidentId(null);
+      return;
+    }
+
+    if (!routeIncidents.some((incident) => incident.id === routeIncidentId)) {
+      setRouteIncidentId(routeIncidents[0].id);
+    }
+  }, [routeIncidentId, routeIncidents]);
 
   const sourceStatuses: SourceStatus[] = [
     getLTAStatus({
       incidentsLoading: ltaIncidentsLoading,
       speedBandsLoading: ltaSpeedBandsLoading,
+      travelTimesLoading: ltaTravelTimesLoading,
       incidentsError: ltaIncidentsError,
       speedBandsError: ltaSpeedBandsError,
+      travelTimesError: ltaTravelTimesError,
       incidentsFetchedAt: ltaIncidentsFetchedAt,
       speedBandsFetchedAt: ltaSpeedBandsFetchedAt,
+      travelTimesFetchedAt: ltaTravelTimesFetchedAt,
     }),
     getNEAStatus({
       loading: neaWeatherLoading,
@@ -105,32 +150,74 @@ export default function HomePage() {
     <div className="h-screen flex flex-col overflow-hidden">
       <TopBar activeView={state.activeView} onViewChange={actions.setView} sourceStatuses={sourceStatuses} />
       <div className="flex-1 flex overflow-hidden relative">
-        <PanelToggle side="left" isOpen={state.leftPanelOpen} onClick={actions.toggleLeftPanel} />
-        <LeftPanel state={state} overallHealth={overallHealth} avgResponseTime={avgResponseTime}
-          onTimeChange={actions.setTimeOffset} onToggleTraffic={actions.toggleTraffic} onToggleWeather={actions.toggleWeather}
-          onToggleIncidents={actions.toggleIncidents} onIncidentTypeChange={actions.setIncidentType}
-          weatherSummary={weatherModel.summary} weatherRegionImpacts={weatherModel.regionImpacts} />
         <div className="flex-1 relative overflow-hidden bg-surface-50">
           <div className="w-full h-full">
             <SingaporeMap stations={FIRE_STATIONS} incidents={derived.filteredIncidents} selectedStation={state.selectedStation}
               onStationClick={actions.selectStation} timeOffset={state.timeOffset} activeView={state.activeView}
               showTraffic={state.showTraffic} showWeather={state.showWeather} showIncidents={state.showIncidents}
               ltaIncidents={ltaIncidents} ltaSpeedBands={ltaSpeedBands} neaStations={neaWeather?.stations} neaForecasts={neaWeather?.forecasts}
-              stationWeatherPenalties={weatherModel.stationPenalties} />
+              stationWeatherPenalties={weatherModel.stationPenalties}
+              oneMapRoutePath={oneMapRoute?.path ?? []}
+              oneMapRouteTarget={selectedRouteIncident} />
           </div>
-          <div className="absolute top-3 left-3 right-3 flex justify-between items-start pointer-events-none z-10">
-            <div className="pointer-events-auto"><AIBanner timeOffset={state.timeOffset} /></div>
+          <div className="absolute top-3 left-3 right-3 flex justify-between items-start pointer-events-none z-[1200]">
+            <div className="pointer-events-auto flex flex-col gap-2">
+              {showAIBanner ? (
+                <AIBanner timeOffset={state.timeOffset} onClose={() => setShowAIBanner(false)} />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowAIBanner(true)}
+                  className="rounded-full border border-surface-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-violet-600 shadow-sm transition-colors hover:bg-violet-50"
+                >
+                  Show AI Prediction
+                </button>
+              )}
+            </div>
           </div>
-          <div className="absolute bottom-3 left-3 z-10"><MapLegend activeView={state.activeView} /></div>
-          <div className="absolute bottom-4 right-4 z-30">
+          <div className="absolute bottom-3 left-3 z-[1200] pointer-events-auto">
+            {showMapLegend ? (
+              <MapLegend activeView={state.activeView} onClose={() => setShowMapLegend(false)} />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowMapLegend(true)}
+                className="rounded-full border border-surface-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
+              >
+                Show Coverage Zones
+              </button>
+            )}
+          </div>
+          <div className="absolute bottom-4 right-4 z-[1200]">
             <FloatingAlert visible={state.timeOffset >= 30}
               message="Suggested standby repositioning: Alexandra Fire Station to Bukit Merah sector to maintain coverage." />
           </div>
         </div>
         <PanelToggle side="right" isOpen={state.rightPanelOpen} onClick={actions.toggleRightPanel} />
-        <RightPanel isOpen={state.rightPanelOpen} selectedStation={state.selectedStation}
-          timeOffset={state.timeOffset} incidents={INCIDENTS} insights={combinedInsights}
-          selectedStationWeatherImpact={state.selectedStation ? weatherModel.stationImpacts[state.selectedStation.id] ?? null : null} />
+        <RightPanel state={state} isOpen={state.rightPanelOpen} selectedStation={state.selectedStation}
+          timeOffset={state.timeOffset} incidents={routeIncidents} insights={combinedInsights}
+          selectedStationWeatherImpact={state.selectedStation ? weatherModel.stationImpacts[state.selectedStation.id] ?? null : null}
+          overallHealth={overallHealth}
+          avgResponseTime={avgResponseTime}
+          onTimeChange={actions.setTimeOffset}
+          onToggleTraffic={actions.toggleTraffic}
+          onToggleWeather={actions.toggleWeather}
+          onToggleIncidents={actions.toggleIncidents}
+          onIncidentTypeChange={actions.setIncidentType}
+          weatherSummary={weatherModel.summary}
+          weatherRegionImpacts={weatherModel.regionImpacts}
+          travelTimes={ltaTravelTimes}
+          travelTimesLoading={ltaTravelTimesLoading}
+          travelTimesError={ltaTravelTimesError}
+          travelTimesFetchedAt={ltaTravelTimesFetchedAt}
+          routeIncidentId={selectedRouteIncident?.id ?? routeIncidentId}
+          onRouteIncidentChange={setRouteIncidentId}
+          routeMode={routeMode}
+          onRouteModeChange={setRouteMode}
+          oneMapRoute={oneMapRoute}
+          oneMapRouteLoading={oneMapRouteLoading}
+          oneMapRouteError={oneMapRouteError}
+          oneMapRouteFetchedAt={oneMapRouteFetchedAt} />
       </div>
     </div>
   );

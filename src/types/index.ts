@@ -90,3 +90,25 @@ export interface WeatherSummary {
   temperatureRange: string | null;
   updatedLabel: string | null;
 }
+
+export interface LatLng {
+  lat: number;
+  lng: number;
+}
+
+export type OneMapRouteMode = "drive" | "walk" | "cycle";
+
+export interface OneMapRouteSummary {
+  startPoint: string;
+  endPoint: string;
+  totalTimeSeconds: number;
+  totalDistanceMeters: number;
+}
+
+export interface OneMapRouteData {
+  mode: OneMapRouteMode;
+  summary: OneMapRouteSummary;
+  path: LatLng[];
+  instructionCount: number;
+  fetchedAt: number;
+}

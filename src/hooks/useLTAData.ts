@@ -12,6 +12,14 @@ export interface LTARoadWork {
   EventID: string; StartDate: string; EndDate: string;
   SvcDept: string; RoadName: string; Other: string;
 }
+export interface LTATravelTime {
+  Name: string;
+  Direction: string | number;
+  FarEndPoint: string;
+  StartPoint: string;
+  EndPoint: string;
+  EstTime: string | number;
+}
 
 function useLTA<T>(dataset: string, intervalMs = 120_000) {
   const [data, setData] = useState<T[]>([]);
@@ -50,3 +58,4 @@ function useLTA<T>(dataset: string, intervalMs = 120_000) {
 export const useLTAIncidents  = () => useLTA<LTAIncident>("incidents", 120_000);
 export const useLTASpeedBands = () => useLTA<LTASpeedBand>("speedbands", 300_000);
 export const useLTARoadWorks  = () => useLTA<LTARoadWork>("roadworks", 600_000);
+export const useLTATravelTimes = () => useLTA<LTATravelTime>("traveltimes", 300_000);
