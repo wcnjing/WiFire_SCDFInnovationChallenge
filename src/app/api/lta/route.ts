@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
   if (!endpoint) return NextResponse.json({ error: "Unknown dataset" }, { status: 400 });
 
   const apiKey = process.env.LTA_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "LTA_API_KEY not set" }, { status: 500 });
+  if (!apiKey) return NextResponse.json({ error: "LTA_API_KEY not set. Add it to .env.local." }, { status: 500 });
 
   try {
     // 1. Fetch the initial pointer response from LTA Datamall

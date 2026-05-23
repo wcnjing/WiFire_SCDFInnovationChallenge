@@ -297,8 +297,8 @@ export default function SingaporeMap({
         radius: radiusMeters,
         color: coverageColors.stroke,
         fillColor: coverageColors.fill,
-        fillOpacity: isSelected ? 0.22 : 0.12,
-        weight: isSelected ? 1.8 : 1.2,
+        fillOpacity: isSelected ? 0.3 : 0.12,
+        weight: isSelected ? 2.6 : 1.2,
         dashArray: "6 4",
         pane: "coverage",
       }).addTo(layers.coverage);
@@ -317,10 +317,10 @@ export default function SingaporeMap({
       const marker = L.circleMarker(
         [station.lat, station.lng],
         createCircleMarkerOptions({
-          radius: isSelected ? 10 : 7,
+          radius: isSelected ? 11 : 7,
           color: "#ffffff",
-          fillColor: isSelected ? "#1e40af" : "#1d4ed8",
-          weight: 2,
+          fillColor: isSelected ? "#1e3a8a" : "#1d4ed8",
+          weight: isSelected ? 3 : 2,
           pane: "stations",
         }),
       )
@@ -338,12 +338,25 @@ export default function SingaporeMap({
         L.circleMarker(
           [station.lat, station.lng],
           createCircleMarkerOptions({
-            radius: 15,
-            color: "#1e40af",
+            radius: 18,
+            color: "#2563eb",
+            fillColor: "#2563eb",
+            fillOpacity: 0.12,
+            weight: 2.5,
+            pane: "stations",
+            dashArray: "4 2",
+          }),
+        ).addTo(layers.stations);
+
+        L.circleMarker(
+          [station.lat, station.lng],
+          createCircleMarkerOptions({
+            radius: 23,
+            color: "#93c5fd",
             fillOpacity: 0,
             weight: 1.5,
             pane: "stations",
-            dashArray: "4 2",
+            dashArray: "2 6",
           }),
         ).addTo(layers.stations);
 
@@ -401,27 +414,49 @@ export default function SingaporeMap({
       const routeCoordinates = oneMapRoutePath.map((point) => [point.lat, point.lng] as [number, number]);
 
       L.polyline(routeCoordinates, {
+        color: "#1d4ed8",
+        weight: 12,
+        opacity: 0.22,
+        pane: "route",
+      }).addTo(layers.route);
+
+      L.polyline(routeCoordinates, {
         color: "#ffffff",
-        weight: 8,
+        weight: 9,
         opacity: 0.95,
         pane: "route",
       }).addTo(layers.route);
 
       L.polyline(routeCoordinates, {
         color: "#0f766e",
-        weight: 5,
+        weight: 5.5,
         opacity: 0.95,
         pane: "route",
       }).addTo(layers.route);
+
+      if (selectedStation) {
+        L.circleMarker(
+          [selectedStation.lat, selectedStation.lng],
+          createCircleMarkerOptions({
+            radius: 9,
+            color: "#ffffff",
+            fillColor: "#1e3a8a",
+            weight: 3,
+            pane: "route",
+          }),
+        )
+          .bindPopup(`Route origin: ${selectedStation.name}`)
+          .addTo(layers.route);
+      }
 
       if (oneMapRouteTarget) {
         L.circleMarker(
           [oneMapRouteTarget.lat, oneMapRouteTarget.lng],
           createCircleMarkerOptions({
-            radius: 7,
+            radius: 9,
             color: "#ffffff",
             fillColor: "#0f766e",
-            weight: 2,
+            weight: 3,
             pane: "route",
           }),
         )

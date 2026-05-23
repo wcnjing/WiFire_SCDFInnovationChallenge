@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
 
   const token = process.env.ONEMAP_API_TOKEN ?? process.env.ONEMAP_TOKEN;
   if (!token) {
-    return buildErrorResponse(500, "ONEMAP_API_TOKEN not set");
+    return buildErrorResponse(500, "ONEMAP_API_TOKEN not set. Add it to .env.local.");
   }
 
   const upstreamUrl = new URL(ONEMAP_ROUTE_URL);

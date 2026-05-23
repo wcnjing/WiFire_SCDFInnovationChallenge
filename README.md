@@ -21,10 +21,13 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ```env
 LTA_API_KEY=your_lta_datamall_key_here
+LTA_ACCOUNT_KEY=your_lta_datamall_account_key_here
 ONEMAP_API_TOKEN=your_onemap_access_token_here
 ```
 
-`LTA_API_KEY` powers the live traffic overlays and expressway ETA cards. `ONEMAP_API_TOKEN` powers the route planner between a selected fire station and an active incident.
+`LTA_API_KEY` powers the live traffic overlays and expressway ETA cards. `LTA_ACCOUNT_KEY` powers the traffic camera snapshot evidence panel. `ONEMAP_API_TOKEN` powers the route planner between a selected fire station and an active incident.
+
+If you use a single LTA DataMall account key for all traffic features, you can place the same value in both `LTA_API_KEY` and `LTA_ACCOUNT_KEY`.
 
 ## Tech Stack
 
@@ -42,12 +45,12 @@ ONEMAP_API_TOKEN=your_onemap_access_token_here
 src/
 |- app/            # Next.js App Router (layout, page, globals.css, API routes)
 |- components/
-|  |- map/         # SingaporeMap Leaflet basemap and overlays
-|  |- panels/      # Left/right panels and routing widgets
+|  |- map/         # SingaporeMap Leaflet basemap, overlays, corridor visual
+|  |- panels/      # Left/right panels, routing widgets, traffic camera evidence
 |  |- ui/          # TopBar, PanelToggle
 |  `- dashboard/   # KPI cards
 |- data/           # Mock stations, incidents, insights
-|- hooks/          # App state, live data, routing hooks
+|- hooks/          # App state, live data, routing, traffic camera hooks
 |- lib/            # Coverage math and utilities
 `- types/          # Shared TypeScript interfaces
 ```
@@ -55,13 +58,35 @@ src/
 ## Features
 
 - Live LTA traffic incidents, speed bands, and expressway travel times
+- LTA traffic camera snapshots for congestion evidence and AI explainability
 - OneMap route planner for drive, walk, and cycle modes
 - Coverage and response-time operational views
 - Weather-aware station penalties using live NEA feeds
 - Incident filtering, KPI cards, and AI insight panels
+
+## Traffic Camera Snapshots
+
+To enable traffic camera snapshots:
+
+1. Copy `.env.local.example` to `.env.local`.
+2. Add your LTA DataMall account key:
+
+```env
+LTA_ACCOUNT_KEY=your_lta_datamall_account_key_here
+```
+
+The dashboard fetches traffic camera snapshots through the server-side route at `src/app/api/lta/traffic-images/route.ts`, so the LTA `AccountKey` is never exposed to client code.
+
+Important notes:
+
+- Traffic camera image links expire quickly and must be fetched fresh from LTA DataMall.
+- The dashboard uses traffic camera snapshots for visual context and AI explainability only.
+- The feature does not identify people, licence plates, or individual vehicles.
+- The traffic camera panel does not claim to provide live video footage.
 
 ## Notes
 
 - The current base map is a live OneMap slippy map rendered with Leaflet.
 - OneMap routing is integrated through server-side API routes so the token stays out of frontend code.
 - If the OneMap token is missing or expired, the route planner will show an inline error state.
+- If `LTA_ACCOUNT_KEY` is missing or the traffic image API fails, the rest of the dashboard continues working and the camera panel shows an inline fallback message.

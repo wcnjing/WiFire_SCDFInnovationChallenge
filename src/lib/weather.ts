@@ -211,6 +211,10 @@ export function buildWeatherOperationalModel(params: {
       region: classifyBroadRegion(peakRainStation.lat, peakRainStation.lng),
       time: "live rainfall",
       text: `${peakRainStation.rainfall.toFixed(1)} mm/5min observed at ${peakRainStation.name}. Expect slower appliance movement on nearby surface roads.`,
+      prediction: `Rainfall around ${peakRainStation.name} will continue to slow local appliance movement.`,
+      impact: `Short-range response legs near ${peakRainStation.name} may lose road speed and add friction at junction turns.`,
+      action: "Keep wet-weather routing active and avoid committing the nearest single-unit resource without backup cover.",
+      confidence: peakRainStation.rainfall >= 3 ? 88 : 81,
     });
   }
 
@@ -221,6 +225,10 @@ export function buildWeatherOperationalModel(params: {
       region: topRegion.region,
       time: "next 2h",
       text: `${topRegion.region} shows the highest weather-adjusted delay risk. ${topRegion.forecast} could add about ${topRegion.penalty.toFixed(1)} min to average response times.`,
+      prediction: `${topRegion.region} will carry the highest weather-adjusted response delay in the next window.`,
+      impact: `${topRegion.forecast} could add around ${topRegion.penalty.toFixed(1)} min to average response time.`,
+      action: `Hold reserve cover near ${topRegion.region} until the weather window softens.`,
+      confidence: topRegion.penalty >= 1 ? 79 : 74,
     });
   }
 
@@ -233,6 +241,10 @@ export function buildWeatherOperationalModel(params: {
       region: "Islandwide",
       time: "24h outlook",
       text: `24-hour outlook: ${params.twentyFourHourGeneral.forecast}. Keep reserve coverage flexible for weather-driven surge or travel delays.`,
+      prediction: `Islandwide weather remains active enough to alter dispatch reliability through the day.`,
+      impact: "Reserve coverage may be consumed earlier if storms and surge calls overlap.",
+      action: "Protect at least one flexible reserve move for late-window demand changes.",
+      confidence: generalSeverity === "storm" ? 76 : 71,
     });
   } else if (params.twentyFourHourGeneral) {
     weatherInsights.push({
@@ -241,6 +253,10 @@ export function buildWeatherOperationalModel(params: {
       region: "Islandwide",
       time: "24h outlook",
       text: `24-hour outlook: ${params.twentyFourHourGeneral.forecast}. Continue monitoring for localised rainfall spikes even if islandwide conditions stay stable.`,
+      prediction: "Islandwide conditions are manageable, but local pockets may still break from the baseline.",
+      impact: "Localized rainfall spikes can still distort arrival-time assumptions for nearby sectors.",
+      action: "Continue monitoring NEA updates and only escalate weather posture if a hotspot intensifies.",
+      confidence: 69,
     });
   }
 

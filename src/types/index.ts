@@ -22,6 +22,10 @@ export type InsightSeverity = "info" | "warning" | "critical";
 export interface AIInsight {
   id: number; severity: InsightSeverity; text: string;
   time: string; region: string;
+  prediction?: string;
+  impact?: string;
+  action?: string;
+  confidence?: number;
 }
 
 export type TrendDirection = "stable" | "degrading" | "improving";
@@ -37,6 +41,7 @@ export interface CoverageColors { fill: string; stroke: string; }
 export type ViewMode = "coverage" | "response";
 export type IncidentFilter = "all" | "cardiac" | "fire" | "medical";
 export type TimeOffset = 0 | 15 | 30 | 60;
+export type ScenarioPreset = "normal" | "morning-peak" | "heavy-rain" | "pie-accident" | "major-event";
 
 export interface AppState {
   activeView: ViewMode; timeOffset: TimeOffset;
@@ -90,6 +95,30 @@ export interface WeatherSummary {
   temperatureRange: string | null;
   updatedLabel: string | null;
 }
+
+export interface RecommendedAction {
+  station: FireStation;
+  predictedResponseTime: number;
+  reason: string;
+  confidence: number;
+  coverageImpact: string;
+}
+
+export type SourceMode = "live" | "loading" | "mock" | "error" | "stale";
+
+export interface SourceStatus {
+  label: string;
+  mode: SourceMode;
+  updatedLabel?: string;
+}
+
+export type TrafficCameraSnapshot = {
+  cameraId: string;
+  latitude: number;
+  longitude: number;
+  imageLink: string;
+};
+
 export interface LatLng {
   lat: number;
   lng: number;

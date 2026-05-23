@@ -1,5 +1,5 @@
 "use client";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import type {
   AppState,
   FireStation,
@@ -12,11 +12,16 @@ import type {
   IncidentFilter,
   WeatherRegionImpact,
   WeatherSummary,
+  RecommendedAction,
+  ScenarioPreset,
+  SourceStatus,
 } from "@/types";
-import type { LTATravelTime } from "@/hooks/useLTAData";
 import { FIRE_STATIONS, REGIONS } from "@/data/mock";
+import { SCENARIO_CONFIGS } from "@/lib/scenarios";
 import { KPIGrid } from "@/components/dashboard/KPICard";
+import RecommendedActionCard from "@/components/panels/RecommendedActionCard";
 import TimeSlider from "@/components/panels/TimeSlider";
+import ScenarioControls from "@/components/panels/ScenarioControls";
 import MapLayers from "@/components/panels/MapLayers";
 import IncidentSelector from "@/components/panels/IncidentSelector";
 import WeatherOutlook from "@/components/panels/WeatherOutlook";
@@ -24,27 +29,33 @@ import RegionStatus from "@/components/panels/RegionStatus";
 import StationCard from "@/components/panels/StationCard";
 import IncidentFeed from "@/components/panels/IncidentFeed";
 import RoutePlannerCard from "@/components/panels/RoutePlannerCard";
-import TravelTimesCard from "@/components/panels/TravelTimesCard";
 import AIInsightsList from "@/components/panels/AIInsightsList";
+import TrafficCameraPanel from "@/components/panels/TrafficCameraPanel";
+import ResponseCorridor3D from "@/components/map/ResponseCorridor3D";
 
 interface Props {
   state: AppState;
-  isOpen: boolean; selectedStation: FireStation | null; timeOffset: TimeOffset;
-  incidents: Incident[]; insights: AIInsight[];
+  isOpen: boolean;
+  selectedStation: FireStation | null;
+  timeOffset: TimeOffset;
+  incidents: Incident[];
+  insights: AIInsight[];
   selectedStationWeatherImpact?: WeatherStationImpact | null;
   overallHealth: number;
   avgResponseTime: number;
-  onTimeChange: (o: TimeOffset) => void;
+  recommendedAction: RecommendedAction | null;
+  scenario: ScenarioPreset;
+  ltaStatus: SourceStatus;
+  neaStatus: SourceStatus;
+  onFocusStation: (station: FireStation) => void;
+  onScenarioChange: (scenario: ScenarioPreset) => void;
+  onTimeChange: (offset: TimeOffset) => void;
   onToggleTraffic: () => void;
   onToggleWeather: () => void;
   onToggleIncidents: () => void;
-  onIncidentTypeChange: (t: IncidentFilter) => void;
+  onIncidentTypeChange: (type: IncidentFilter) => void;
   weatherSummary: WeatherSummary;
   weatherRegionImpacts: WeatherRegionImpact[];
-  travelTimes: LTATravelTime[];
-  travelTimesLoading: boolean;
-  travelTimesError: string | null;
-  travelTimesFetchedAt: number | null;
   routeIncidentId: number | null;
   onRouteIncidentChange: (incidentId: number) => void;
   routeMode: OneMapRouteMode;
@@ -53,6 +64,49 @@ interface Props {
   oneMapRouteLoading: boolean;
   oneMapRouteError: string | null;
   oneMapRouteFetchedAt: number | null;
+}
+
+function SectionShell({ title, children }: { title?: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-surface-200 bg-white/95 p-3 shadow-sm">
+      {title && <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">{title}</div>}
+      {children}
+    </section>
+  );
+}
+
+const statusTone = {
+  live: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  loading: "border-amber-200 bg-amber-50 text-amber-700",
+  mock: "border-violet-200 bg-violet-50 text-violet-700",
+  error: "border-red-200 bg-red-50 text-red-700",
+  stale: "border-slate-200 bg-slate-100 text-slate-700",
+} as const;
+
+function StatusBadge({ label, status }: { label: string; status?: SourceStatus }) {
+  if (!status) {
+    return (
+      <div className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-brand-700">
+        {label}
+      </div>
+    );
+  }
+
+  const modeLabel = status.mode === "live"
+    ? "Live"
+    : status.mode === "loading"
+      ? "Loading"
+      : status.mode === "mock"
+        ? "Fallback"
+        : status.mode === "stale"
+          ? "Stale"
+          : "Error";
+
+  return (
+    <div className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusTone[status.mode]}`}>
+      {label} {modeLabel}
+    </div>
+  );
 }
 
 export default function RightPanel({
@@ -65,6 +119,12 @@ export default function RightPanel({
   selectedStationWeatherImpact,
   overallHealth,
   avgResponseTime,
+  recommendedAction,
+  scenario,
+  ltaStatus,
+  neaStatus,
+  onFocusStation,
+  onScenarioChange,
   onTimeChange,
   onToggleTraffic,
   onToggleWeather,
@@ -72,10 +132,6 @@ export default function RightPanel({
   onIncidentTypeChange,
   weatherSummary,
   weatherRegionImpacts,
-  travelTimes,
-  travelTimesLoading,
-  travelTimesError,
-  travelTimesFetchedAt,
   routeIncidentId,
   onRouteIncidentChange,
   routeMode,
@@ -85,6 +141,7 @@ export default function RightPanel({
   oneMapRouteError,
   oneMapRouteFetchedAt,
 }: Props) {
+  const scenarioConfig = SCENARIO_CONFIGS[scenario];
   const kpis = [
     { label: "Coverage Health", value: `${overallHealth}%`, status: overallHealth >= 85 ? "green" as const : overallHealth >= 75 ? "amber" as const : "red" as const },
     { label: "Avg Response", value: `${avgResponseTime.toFixed(1)}m`, status: avgResponseTime <= 8 ? "green" as const : avgResponseTime <= 11 ? "amber" as const : "red" as const },
@@ -95,53 +152,97 @@ export default function RightPanel({
   return (
     <AnimatePresence>
       {isOpen && (
-        <motion.aside initial={{ width: 0, opacity: 0 }} animate={{ width: 320, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
+        <motion.aside
+          initial={{ width: 0, opacity: 0 }}
+          animate={{ width: 372, opacity: 1 }}
+          exit={{ width: 0, opacity: 0 }}
           transition={{ duration: 0.25, ease: "easeInOut" }}
-          className="bg-white border-l border-surface-200 flex flex-col overflow-y-auto shrink-0 z-20 scrollbar-thin">
-          <div className="p-3 border-b border-surface-100">
-            <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-2">Operational Status</div>
-            <KPIGrid items={kpis} />
-          </div>
-          <div className="p-3 border-b border-surface-100">
-            <TimeSlider value={state.timeOffset} onChange={onTimeChange} />
-          </div>
-          <div className="p-3 border-b border-surface-100">
-            <MapLayers
-              showTraffic={state.showTraffic}
-              showWeather={state.showWeather}
-              showIncidents={state.showIncidents}
-              onToggleTraffic={onToggleTraffic}
-              onToggleWeather={onToggleWeather}
-              onToggleIncidents={onToggleIncidents}
+          className="scrollbar-thin z-20 flex shrink-0 flex-col overflow-y-auto border-l border-surface-200 bg-surface-50/95 backdrop-blur"
+        >
+          <div className="space-y-3 p-3">
+            <RecommendedActionCard
+              action={recommendedAction}
+              selectedStation={selectedStation}
+              scenarioLabel={scenarioConfig.label}
+              onFocusStation={onFocusStation}
             />
+
+            <SectionShell title="Operational Status">
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                <StatusBadge label="LTA" status={ltaStatus} />
+                <StatusBadge label="NEA" status={neaStatus} />
+                <StatusBadge label="AI Forecast On" />
+              </div>
+              <KPIGrid items={kpis} />
+              <div className="mt-3 space-y-3">
+                <StationCard station={selectedStation} timeOffset={timeOffset} weatherImpact={selectedStationWeatherImpact} />
+              </div>
+            </SectionShell>
+
+            <SectionShell>
+              <TimeSlider value={state.timeOffset} onChange={onTimeChange} />
+              <div className="mt-2 rounded-xl border border-surface-100 bg-surface-50 px-3 py-2 text-[11px] text-slate-500">
+                Scenario horizon: <span className="font-semibold text-slate-700">{scenarioConfig.label}</span> - {scenarioConfig.brief}
+              </div>
+            </SectionShell>
+
+            <SectionShell>
+              <ScenarioControls value={scenario} onChange={onScenarioChange} />
+              <div className="mt-3">
+                <IncidentSelector value={state.incidentType} onChange={onIncidentTypeChange} />
+              </div>
+            </SectionShell>
+
+            <SectionShell>
+              <MapLayers
+                showTraffic={state.showTraffic}
+                showWeather={state.showWeather}
+                showIncidents={state.showIncidents}
+                onToggleTraffic={onToggleTraffic}
+                onToggleWeather={onToggleWeather}
+                onToggleIncidents={onToggleIncidents}
+              />
+            </SectionShell>
+
+            <SectionShell title="Traffic Conditions">
+              <div className="space-y-3">
+                <RoutePlannerCard
+                  station={selectedStation}
+                  incidents={incidents}
+                  selectedIncidentId={routeIncidentId}
+                  onIncidentChange={onRouteIncidentChange}
+                  routeMode={routeMode}
+                  onRouteModeChange={onRouteModeChange}
+                  route={oneMapRoute}
+                  loading={oneMapRouteLoading}
+                  error={oneMapRouteError}
+                  fetchedAt={oneMapRouteFetchedAt}
+                />
+                <IncidentFeed incidents={incidents} />
+              </div>
+            </SectionShell>
+
+            <SectionShell>
+              <AIInsightsList insights={insights} />
+            </SectionShell>
+
+            <ResponseCorridor3D />
+
+            <TrafficCameraPanel />
+
+            <SectionShell>
+              <WeatherOutlook
+                summary={weatherSummary}
+                regionImpacts={weatherRegionImpacts}
+                timeOffset={state.timeOffset}
+                sourceStatus={neaStatus}
+              />
+            </SectionShell>
+
+            <SectionShell>
+              <RegionStatus regions={REGIONS} timeOffset={state.timeOffset} weatherImpacts={weatherRegionImpacts} />
+            </SectionShell>
           </div>
-          {state.activeView === "response" && (
-            <div className="p-3 border-b border-surface-100">
-              <IncidentSelector value={state.incidentType} onChange={onIncidentTypeChange} />
-            </div>
-          )}
-          <StationCard station={selectedStation} timeOffset={timeOffset} weatherImpact={selectedStationWeatherImpact} />
-          <RoutePlannerCard
-            station={selectedStation}
-            incidents={incidents}
-            selectedIncidentId={routeIncidentId}
-            onIncidentChange={onRouteIncidentChange}
-            routeMode={routeMode}
-            onRouteModeChange={onRouteModeChange}
-            route={oneMapRoute}
-            loading={oneMapRouteLoading}
-            error={oneMapRouteError}
-            fetchedAt={oneMapRouteFetchedAt}
-          />
-          <div className="p-3 border-b border-surface-100">
-            <WeatherOutlook summary={weatherSummary} regionImpacts={weatherRegionImpacts} timeOffset={state.timeOffset} />
-          </div>
-          <div className="p-3 border-b border-surface-100">
-            <RegionStatus regions={REGIONS} timeOffset={state.timeOffset} weatherImpacts={weatherRegionImpacts} />
-          </div>
-          <IncidentFeed incidents={incidents} />
-          <TravelTimesCard travelTimes={travelTimes} loading={travelTimesLoading} error={travelTimesError} fetchedAt={travelTimesFetchedAt} />
-          <AIInsightsList insights={insights} />
         </motion.aside>
       )}
     </AnimatePresence>

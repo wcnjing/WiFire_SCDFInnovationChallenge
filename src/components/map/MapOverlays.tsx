@@ -42,10 +42,10 @@ export function AIBanner({ timeOffset, onClose }: { timeOffset: TimeOffset; onCl
 
 export function MapLegend({ activeView, onClose }: { activeView: ViewMode; onClose?: () => void }) {
   const items = [
-    { color: "#22c55e", label: "<= 8 min (Fire target)" },
-    { color: "#f59e0b", label: "<= 11 min (EMS target)" },
-    { color: "#ef4444", label: "> 11 min (Degraded)" },
-    { color: "#94a3b8", label: "Unavailable" },
+    { color: "#22c55e", label: "Green: Within fire response target" },
+    { color: "#f59e0b", label: "Amber: Within EMS response target" },
+    { color: "#ef4444", label: "Red: Delayed / degraded coverage" },
+    { color: "#94a3b8", label: "Grey: Unavailable" },
     ...(activeView === "response" ? [{ color: "#8b5cf6", label: "Volunteer density" }] : []),
   ];
 

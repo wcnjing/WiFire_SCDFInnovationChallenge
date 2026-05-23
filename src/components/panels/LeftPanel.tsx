@@ -1,6 +1,6 @@
 "use client";
 import { motion, AnimatePresence } from "framer-motion";
-import type { AppState, TimeOffset, IncidentFilter, WeatherRegionImpact, WeatherSummary } from "@/types";
+import type { AppState, TimeOffset, IncidentFilter, WeatherRegionImpact, WeatherSummary, SourceStatus } from "@/types";
 import { FIRE_STATIONS, INCIDENTS, REGIONS } from "@/data/mock";
 import { KPIGrid } from "@/components/dashboard/KPICard";
 import TimeSlider from "@/components/panels/TimeSlider";
@@ -22,6 +22,7 @@ export default function LeftPanel({
   state, overallHealth, avgResponseTime, onTimeChange, onToggleTraffic, onToggleWeather, onToggleIncidents, onIncidentTypeChange,
   weatherSummary, weatherRegionImpacts,
 }: Props) {
+  const neaStatus: SourceStatus = { label: "NEA", mode: "live", updatedLabel: weatherSummary.updatedLabel ?? undefined };
   const kpis = [
     { label: "Coverage Health", value: `${overallHealth}%`, status: overallHealth >= 85 ? "green" as const : overallHealth >= 75 ? "amber" as const : "red" as const },
     { label: "Avg Response", value: `${avgResponseTime.toFixed(1)}m`, status: avgResponseTime <= 8 ? "green" as const : avgResponseTime <= 11 ? "amber" as const : "red" as const },
@@ -53,7 +54,7 @@ export default function LeftPanel({
               </div>
             )}
             <div className="p-3 border-b border-surface-100">
-              <WeatherOutlook summary={weatherSummary} regionImpacts={weatherRegionImpacts} timeOffset={state.timeOffset} />
+              <WeatherOutlook summary={weatherSummary} regionImpacts={weatherRegionImpacts} timeOffset={state.timeOffset} sourceStatus={neaStatus} />
             </div>
             <div className="p-3">
               <RegionStatus regions={REGIONS} timeOffset={state.timeOffset} weatherImpacts={weatherRegionImpacts} />

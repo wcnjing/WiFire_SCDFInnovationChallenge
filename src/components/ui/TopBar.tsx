@@ -1,16 +1,8 @@
 "use client";
 import { motion } from "framer-motion";
 import { Shield, Layers, Heart } from "lucide-react";
-import type { ViewMode } from "@/types";
+import type { SourceMode, SourceStatus, ViewMode } from "@/types";
 import { useClock } from "@/hooks/useLiveTick";
-
-type SourceMode = "live" | "loading" | "mock" | "error" | "stale";
-
-export interface SourceStatus {
-  label: string;
-  mode: SourceMode;
-  updatedLabel?: string;
-}
 
 interface TopBarProps {
   activeView: ViewMode;
