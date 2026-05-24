@@ -32,7 +32,10 @@ import IncidentFeed from "@/components/panels/IncidentFeed";
 import RoutePlannerCard from "@/components/panels/RoutePlannerCard";
 import AIInsightsList from "@/components/panels/AIInsightsList";
 import TrafficCameraPanel from "@/components/panels/TrafficCameraPanel";
+import TravelTimesCard from "@/components/panels/TravelTimesCard";
+import UrbanIncidentContextCard from "@/components/panels/UrbanIncidentContextCard";
 import ResponseCorridor3D from "@/components/map/ResponseCorridor3D";
+import type { LTATravelTime } from "@/hooks/useLTAData";
 
 interface Props {
   state: AppState;
@@ -66,6 +69,10 @@ interface Props {
   oneMapRouteError: string | null;
   oneMapRouteFetchedAt: number | null;
   onFocusIncident: (incident: Incident) => void;
+  ltaTravelTimes: LTATravelTime[];
+  ltaTravelTimesLoading: boolean;
+  ltaTravelTimesError: string | null;
+  ltaTravelTimesFetchedAt: number | null;
   trafficCameras: TrafficCameraSnapshot[];
   trafficCameraLoading: boolean;
   trafficCameraError: string | null;
@@ -148,6 +155,10 @@ export default function RightPanel({
   oneMapRouteError,
   oneMapRouteFetchedAt,
   onFocusIncident,
+  ltaTravelTimes,
+  ltaTravelTimesLoading,
+  ltaTravelTimesError,
+  ltaTravelTimesFetchedAt,
   trafficCameras,
   trafficCameraLoading,
   trafficCameraError,
@@ -161,6 +172,7 @@ export default function RightPanel({
     { label: "Active Incidents", value: incidents.length, status: "neutral" as const },
     { label: "Stations Online", value: `${FIRE_STATIONS.length}/${FIRE_STATIONS.length}`, status: "green" as const },
   ];
+  const selectedIncident = incidents.find((incident) => incident.id === routeIncidentId) ?? incidents[0] ?? null;
 
   return (
     <AnimatePresence>
@@ -214,17 +226,6 @@ export default function RightPanel({
               />
             </SectionShell>
 
-            <TrafficCameraPanel
-              selectedStation={selectedStation}
-              incidents={incidents}
-              selectedIncidentId={routeIncidentId}
-              cameras={trafficCameras}
-              loading={trafficCameraLoading}
-              error={trafficCameraError}
-              lastUpdated={trafficCameraLastUpdated}
-              onRefresh={onRefreshTrafficCameras}
-            />
-
             <SectionShell title="Operational Status">
               <div className="mb-3 flex flex-wrap gap-1.5">
                 <StatusBadge label="LTA" status={ltaStatus} />
@@ -252,7 +253,39 @@ export default function RightPanel({
               <AIInsightsList insights={insights} />
             </SectionShell>
 
-            <ResponseCorridor3D />
+            <UrbanIncidentContextCard incident={selectedIncident} />
+
+            <ResponseCorridor3D
+              selectedStation={selectedStation}
+              incidents={incidents}
+              selectedIncidentId={routeIncidentId}
+              cameras={trafficCameras}
+              loading={trafficCameraLoading}
+              error={trafficCameraError}
+              lastUpdated={trafficCameraLastUpdated}
+              onRefresh={onRefreshTrafficCameras}
+            />
+
+            <TrafficCameraPanel
+              selectedStation={selectedStation}
+              incidents={incidents}
+              selectedIncidentId={routeIncidentId}
+              cameras={trafficCameras}
+              loading={trafficCameraLoading}
+              error={trafficCameraError}
+              lastUpdated={trafficCameraLastUpdated}
+              onRefresh={onRefreshTrafficCameras}
+            />
+
+            <SectionShell>
+              <TravelTimesCard
+                travelTimes={ltaTravelTimes}
+                loading={ltaTravelTimesLoading}
+                error={ltaTravelTimesError}
+                fetchedAt={ltaTravelTimesFetchedAt}
+                sourceStatus={ltaStatus}
+              />
+            </SectionShell>
 
             <SectionShell>
               <WeatherOutlook

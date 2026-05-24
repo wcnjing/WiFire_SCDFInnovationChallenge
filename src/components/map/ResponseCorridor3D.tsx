@@ -1,6 +1,18 @@
 "use client";
 import { Route } from "lucide-react";
 import { RESPONSE_CORRIDOR_DEMO } from "@/data/mock";
+import type { FireStation, Incident, TrafficCameraSnapshot } from "@/types";
+
+interface Props {
+  selectedStation: FireStation | null;
+  incidents: Incident[];
+  selectedIncidentId: number | null;
+  cameras: TrafficCameraSnapshot[];
+  loading: boolean;
+  error: string | null;
+  lastUpdated: string | null;
+  onRefresh: () => void | Promise<void>;
+}
 
 const corridorTone = {
   Low: {
@@ -23,7 +35,7 @@ const corridorTone = {
   },
 } as const;
 
-export default function ResponseCorridor3D() {
+export default function ResponseCorridor3D(_: Props) {
   return (
     <section className="rounded-2xl border border-surface-200 bg-white/95 p-3 shadow-sm">
       <div className="flex items-center gap-2">

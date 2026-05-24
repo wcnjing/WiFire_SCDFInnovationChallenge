@@ -119,6 +119,28 @@ export type TrafficCameraSnapshot = {
   imageLink: string;
 };
 
+export type UrbanBuildingContext = {
+  id: string;
+  name?: string | null;
+  buildingType?: "Residential" | "Commercial" | "Industrial" | "Mixed Use" | "Unknown" | string | null;
+  heightCategory: "Low" | "Medium" | "High" | "Unknown";
+  estimatedHeight: number;
+  coordinates: [number, number][];
+  distanceFromIncidentMeters: number;
+  isLikelyIncidentBuilding: boolean;
+};
+
+export type URABuildingContextResponse = {
+  source: string;
+  incident: {
+    latitude: number;
+    longitude: number;
+  };
+  radius: number;
+  isFallback: boolean;
+  buildings: UrbanBuildingContext[];
+};
+
 export interface LatLng {
   lat: number;
   lng: number;

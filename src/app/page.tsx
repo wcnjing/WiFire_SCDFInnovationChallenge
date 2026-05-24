@@ -14,7 +14,12 @@ import { useNEAWeather } from "@/hooks/useNEAWeather";
 import { calculateAvgResponseTime, calculateOverallHealth, getAdjustedResponseTime } from "@/lib/coverage";
 import { buildTrafficCameraFocusPoints, rankTrafficCameraSnapshots } from "@/lib/trafficCameras";
 import { buildWeatherOperationalModel } from "@/lib/weather";
-import { buildSimulatedLTAIncidents, buildSimulatedLTASpeedBands, buildSimulatedNEAWeather } from "@/lib/fallbackData";
+import {
+  buildSimulatedLTAIncidents,
+  buildSimulatedLTASpeedBands,
+  buildSimulatedLTATravelTimes,
+  buildSimulatedNEAWeather,
+} from "@/lib/fallbackData";
 import { SCENARIO_CONFIGS } from "@/lib/scenarios";
 import type { RankedTrafficCameraSnapshot } from "@/lib/trafficCameras";
 import type { OneMapRouteMode, RecommendedAction, ScenarioPreset, SourceStatus } from "@/types";
@@ -118,6 +123,7 @@ export default function HomePage() {
   const simulatedNEAWeather = useMemo(() => buildSimulatedNEAWeather(), []);
   const simulatedLTAIncidents = useMemo(() => buildSimulatedLTAIncidents(), []);
   const simulatedLTASpeedBands = useMemo(() => buildSimulatedLTASpeedBands(), []);
+  const simulatedLTATravelTimes = useMemo(() => buildSimulatedLTATravelTimes(), []);
   const fallbackSnapshotAt = simulatedNEAWeather.fetchedAt;
 
   const usingFallbackNEA = !neaWeather && !neaWeatherLoading && Boolean(neaWeatherError);
@@ -133,6 +139,10 @@ export default function HomePage() {
   const activeLTASpeedBands = useMemo(
     () => (usingFallbackLTASpeedBands ? simulatedLTASpeedBands : ltaSpeedBands),
     [ltaSpeedBands, simulatedLTASpeedBands, usingFallbackLTASpeedBands],
+  );
+  const activeLTATravelTimes = useMemo(
+    () => (usingFallbackLTATravelTimes ? simulatedLTATravelTimes : ltaTravelTimes),
+    [ltaTravelTimes, simulatedLTATravelTimes, usingFallbackLTATravelTimes],
   );
   const activeNEAWeather = useMemo(
     () => (usingFallbackNEA ? simulatedNEAWeather : neaWeather),
@@ -470,6 +480,10 @@ export default function HomePage() {
           oneMapRouteError={oneMapRouteError}
           oneMapRouteFetchedAt={oneMapRouteFetchedAt}
           onFocusIncident={focusIncidentOnMap}
+          ltaTravelTimes={activeLTATravelTimes}
+          ltaTravelTimesLoading={ltaTravelTimesLoading}
+          ltaTravelTimesError={ltaTravelTimesError}
+          ltaTravelTimesFetchedAt={usingFallbackLTATravelTimes ? fallbackSnapshotAt : ltaTravelTimesFetchedAt}
           trafficCameras={trafficCameras}
           trafficCameraLoading={trafficCameraLoading}
           trafficCameraError={trafficCameraError}

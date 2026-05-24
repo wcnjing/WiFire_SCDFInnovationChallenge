@@ -1,4 +1,5 @@
 import { FIRE_STATIONS, INCIDENTS } from "@/data/mock";
+import type { UrbanBuildingContext } from "@/types";
 import type { LTAIncident, LTASpeedBand, LTATravelTime } from "@/hooks/useLTAData";
 import type { NEAWeatherData } from "@/hooks/useNEAWeather";
 
@@ -114,4 +115,71 @@ export function buildSimulatedNEAWeather(): NEAWeatherData {
 
 export function buildSimulatedRouteOrigin() {
   return FIRE_STATIONS[0];
+}
+
+function metersToLat(meters: number) {
+  return meters / 111_320;
+}
+
+function metersToLng(meters: number, latitude: number) {
+  return meters / (111_320 * Math.cos((latitude * Math.PI) / 180));
+}
+
+function estimateDistanceMeters(aLat: number, aLng: number, bLat: number, bLng: number) {
+  const deltaLat = (aLat - bLat) * 111_320;
+  const deltaLng = (aLng - bLng) * 111_320 * Math.cos((((aLat + bLat) / 2) * Math.PI) / 180);
+  return Math.sqrt(deltaLat ** 2 + deltaLng ** 2);
+}
+
+function heightCategoryForHeight(height: number): UrbanBuildingContext["heightCategory"] {
+  if (height >= 40) return "High";
+  if (height >= 18) return "Medium";
+  if (height > 0) return "Low";
+  return "Unknown";
+}
+
+export function createFallbackUrbanBuildings(lat: number, lng: number, radius: number) {
+  const offsets = [
+    { x: -64, y: -38, width: 40, depth: 30, height: 52, type: "Commercial" },
+    { x: -20, y: -18, width: 26, depth: 22, height: 28, type: "Mixed Use" },
+    { x: 16, y: -12, width: 34, depth: 26, height: 62, type: "Residential" },
+    { x: 56, y: -42, width: 38, depth: 28, height: 20, type: "Industrial" },
+    { x: -54, y: 18, width: 24, depth: 20, height: 16, type: "Residential" },
+    { x: -8, y: 14, width: 30, depth: 24, height: 46, type: "Commercial" },
+    { x: 34, y: 22, width: 42, depth: 30, height: 34, type: "Mixed Use" },
+    { x: 76, y: 14, width: 22, depth: 18, height: 14, type: "Residential" },
+  ] as const;
+
+  const buildings: UrbanBuildingContext[] = offsets.map((offset, index) => {
+    const centerLat = lat + metersToLat(offset.y);
+    const centerLng = lng + metersToLng(offset.x, lat);
+    const halfWidthLng = metersToLng(offset.width / 2, lat);
+    const halfDepthLat = metersToLat(offset.depth / 2);
+
+    const coordinates: [number, number][] = [
+      [centerLng - halfWidthLng, centerLat - halfDepthLat],
+      [centerLng + halfWidthLng, centerLat - halfDepthLat],
+      [centerLng + halfWidthLng, centerLat + halfDepthLat],
+      [centerLng - halfWidthLng, centerLat + halfDepthLat],
+    ];
+
+    return {
+      id: `fallback-building-${index + 1}`,
+      name: index === 1 ? "Probable Incident Access Block" : `Urban Block ${index + 1}`,
+      buildingType: offset.type,
+      estimatedHeight: offset.height,
+      heightCategory: heightCategoryForHeight(offset.height),
+      coordinates,
+      distanceFromIncidentMeters: estimateDistanceMeters(lat, lng, centerLat, centerLng),
+      isLikelyIncidentBuilding: false,
+    };
+  })
+    .filter((building) => building.distanceFromIncidentMeters <= Math.max(radius * 1.2, 120))
+    .sort((left, right) => left.distanceFromIncidentMeters - right.distanceFromIncidentMeters);
+
+  if (buildings[0]) {
+    buildings[0].isLikelyIncidentBuilding = true;
+  }
+
+  return buildings.slice(0, 12);
 }

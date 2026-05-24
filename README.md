@@ -60,6 +60,7 @@ src/
 - Live LTA traffic incidents, speed bands, and expressway travel times
 - LTA traffic camera snapshots for congestion evidence and AI explainability
 - OneMap route planner for drive, walk, and cycle modes
+- Indicative urban/building context from the public URA building dataset on data.gov.sg
 - Coverage and response-time operational views
 - Weather-aware station penalties using live NEA feeds
 - Incident filtering, KPI cards, and AI insight panels
@@ -83,6 +84,23 @@ Important notes:
 - The dashboard uses traffic camera snapshots for visual context and AI explainability only.
 - The feature does not identify people, licence plates, or individual vehicles.
 - The traffic camera panel does not claim to provide live video footage.
+
+## URA Urban Context
+
+The current urban context feature uses the public `data.gov.sg` GeoJSON dataset:
+
+- Master Plan 2019 Building layer
+- Dataset ID: `d_e8e3249d4433845bdd8034ae44329d9e`
+
+No URA access key is required for the current implementation.
+
+Important notes:
+
+- The URA feature provides simplified urban/building context. It does not generate exact real-time 3D building reconstructions.
+- The dashboard fetches the public dataset download URL from `data.gov.sg`, then filters nearby building footprints around the selected incident.
+- If the dataset is unavailable or parsing fails, the dashboard uses fallback demo building blocks so the UI remains usable.
+- The feature is intended as an indicative urban context and operational context layer for response planning.
+- The feature does not identify residents, occupants, individual units, faces, or vehicles.
 
 ## Notes
 
