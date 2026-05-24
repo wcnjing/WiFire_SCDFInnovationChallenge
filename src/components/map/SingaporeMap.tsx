@@ -125,7 +125,7 @@ function incidentPopupContent(incident: Incident) {
         data-incident-urban-context="${incident.id}"
         style="margin-top:10px;width:100%;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:9999px;padding:8px 12px;font-size:11px;font-weight:700;cursor:pointer;"
       >
-        Show 3D building context
+        Open 3D context
       </button>
     </div>
   `;

@@ -13,6 +13,7 @@ interface Props {
   loading: boolean;
   error: string | null;
   fetchedAt: number | null;
+  showHeader?: boolean;
 }
 
 const ROUTE_MODES: OneMapRouteMode[] = ["drive", "walk", "cycle"];
@@ -47,18 +48,21 @@ export default function RoutePlannerCard({
   loading,
   error,
   fetchedAt,
+  showHeader = true,
 }: Props) {
   const updatedLabel = formatUpdatedLabel(fetchedAt);
 
   return (
     <div>
-      <div className="px-3 py-2 border-b border-surface-100">
-        <div className="flex items-center gap-1.5">
-          <Navigation size={11} className="text-slate-400" />
-          <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">OneMap Routing</span>
-          {updatedLabel && <span className="ml-auto text-[10px] font-mono text-slate-400">{updatedLabel}</span>}
+      {showHeader && (
+        <div className="border-b border-surface-100 px-3 py-2">
+          <div className="flex items-center gap-1.5">
+            <Navigation size={11} className="text-slate-400" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">OneMap Routing</span>
+            {updatedLabel && <span className="ml-auto text-[10px] font-mono text-slate-400">{updatedLabel}</span>}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="p-3 border-b border-surface-50 space-y-2.5">
         {!station && (

@@ -1,19 +1,17 @@
 "use client";
-import { Brain, CloudRain, Layers3, Route, SlidersHorizontal } from "lucide-react";
+import { Brain, CloudRain, Route } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-export type SupportingIntelligenceTab = "route" | "environment" | "coverage" | "forecasting" | "demo";
+export type SupportingIntelligenceTab = "evidence" | "context" | "forecast-controls";
 
 const TAB_DEFS: {
   id: SupportingIntelligenceTab;
   label: string;
   icon: LucideIcon;
 }[] = [
-  { id: "route", label: "Route Evidence", icon: Route },
-  { id: "environment", label: "Environment", icon: CloudRain },
-  { id: "coverage", label: "Coverage & Regions", icon: Layers3 },
-  { id: "forecasting", label: "AI & Forecasting", icon: Brain },
-  { id: "demo", label: "Demo Controls", icon: SlidersHorizontal },
+  { id: "evidence", label: "Evidence", icon: Route },
+  { id: "context", label: "Context", icon: CloudRain },
+  { id: "forecast-controls", label: "Forecast & Controls", icon: Brain },
 ];
 
 interface Props {

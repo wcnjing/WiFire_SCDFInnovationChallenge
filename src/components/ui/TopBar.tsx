@@ -20,13 +20,24 @@ const sourceStyles: Record<SourceMode, { dot: string; pill: string; text: string
 
 export default function TopBar({ activeView, onViewChange, sourceStatuses }: TopBarProps) {
   const clock = useClock();
-  const views: { key: ViewMode; label: string; icon: typeof Layers }[] = [
-    { key: "coverage", label: "Live Coverage Surface", icon: Layers },
-    { key: "response", label: "Effective Response Time", icon: Heart },
+  const views: { key: ViewMode; label: string; subtitle: string; icon: typeof Layers }[] = [
+    {
+      key: "coverage",
+      label: "Coverage Surface",
+      subtitle: "Station reachability and response-zone health",
+      icon: Layers,
+    },
+    {
+      key: "response",
+      label: "Effective Response",
+      subtitle: "First intervention timing and incident-level response",
+      icon: Heart,
+    },
   ];
 
   return (
-    <header className="h-12 bg-white border-b border-surface-200 flex items-center justify-between px-4 z-50 shrink-0">
+    <header className="z-50 shrink-0 border-b border-surface-200 bg-white px-4 py-3">
+      <div className="flex items-center justify-between gap-4">
       <div className="flex items-center gap-3">
         <div className="w-7 h-7 bg-brand-800 rounded-md flex items-center justify-center">
           <Shield size={15} className="text-white" />
@@ -35,16 +46,43 @@ export default function TopBar({ activeView, onViewChange, sourceStatuses }: Top
         <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">Coverage Intelligence Platform</span>
       </div>
 
-      <div className="flex gap-0.5 bg-surface-100 p-[3px] rounded-lg">
-        {views.map(({ key, label, icon: Icon }) => (
+      <div className="hidden lg:flex gap-0.5 rounded-xl bg-surface-100 p-[3px]">
+        {views.map(({ key, label, subtitle, icon: Icon }) => (
           <button key={key} onClick={() => onViewChange(key)}
-            className={`relative px-3.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors duration-200 ${activeView === key ? "text-brand-800" : "text-slate-400 hover:text-slate-600"}`}>
+            className={`relative rounded-lg px-3.5 py-2 text-left transition-colors duration-200 ${activeView === key ? "text-brand-800" : "text-slate-400 hover:text-slate-600"}`}>
             {activeView === key && (
-              <motion.div layoutId="viewIndicator" className="absolute inset-0 bg-white rounded-md shadow-sm"
+              <motion.div layoutId="viewIndicator" className="absolute inset-0 rounded-lg bg-white shadow-sm"
+                transition={{ type: "spring", duration: 0.35, bounce: 0.15 }} />
+            )}
+            <span className="relative z-10 flex items-start gap-2">
+              <Icon size={14} className="mt-0.5 shrink-0" />
+              <span className="flex flex-col">
+                <span className="text-xs font-semibold">{label}</span>
+                <span className={`text-[10px] leading-relaxed ${activeView === key ? "text-slate-500" : "text-slate-400"}`}>
+                  {subtitle}
+                </span>
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex gap-0.5 rounded-lg bg-surface-100 p-[3px] lg:hidden">
+        {views.map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => onViewChange(key)}
+            className={`relative rounded-md px-3.5 py-1.5 text-xs font-semibold transition-colors duration-200 ${
+              activeView === key ? "text-brand-800" : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            {activeView === key && (
+              <motion.div layoutId="mobileViewIndicator" className="absolute inset-0 rounded-md bg-white shadow-sm"
                 transition={{ type: "spring", duration: 0.35, bounce: 0.15 }} />
             )}
             <span className="relative z-10 flex items-center gap-1.5">
-              <Icon size={13} /><span className="hidden md:inline">{label}</span>
+              <Icon size={13} />
+              <span>{label}</span>
             </span>
           </button>
         ))}
@@ -72,6 +110,7 @@ export default function TopBar({ activeView, onViewChange, sourceStatuses }: Top
           <span className="text-[10px] font-semibold text-green-600 tracking-wide">SYSTEM LIVE</span>
         </div>
         <span className="font-mono text-xs text-slate-400 tabular-nums w-[60px]">{clock}</span>
+      </div>
       </div>
     </header>
   );

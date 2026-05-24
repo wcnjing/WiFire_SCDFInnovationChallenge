@@ -43,13 +43,23 @@ export function AIBanner({ timeOffset, onClose }: { timeOffset: TimeOffset; onCl
 }
 
 export function MapLegend({ activeView, onClose }: { activeView: ViewMode; onClose?: () => void }) {
-  const items = [
-    { color: "#22c55e", label: "Green: Within fire response target" },
-    { color: "#f59e0b", label: "Amber: Within EMS response target" },
-    { color: "#ef4444", label: "Red: Delayed / degraded coverage" },
-    { color: "#94a3b8", label: "Grey: Unavailable" },
-    ...(activeView === "response" ? [{ color: "#8b5cf6", label: "Volunteer density" }] : []),
-  ];
+  const title = activeView === "coverage" ? "Coverage Surface" : "Effective Response";
+  const subtitle = activeView === "coverage"
+    ? "Station reachability and response-zone health"
+    : "First intervention timing and incident-level response";
+  const items = activeView === "coverage"
+    ? [
+        { color: "#22c55e", label: "Green: Within target appliance reach" },
+        { color: "#f59e0b", label: "Amber: Coverage margin reduced" },
+        { color: "#ef4444", label: "Red: Coverage gap or delayed response" },
+        { color: "#94a3b8", label: "Grey: Unavailable / not assessed" },
+      ]
+    : [
+        { color: "#22c55e", label: "Green: Fast first intervention" },
+        { color: "#f59e0b", label: "Amber: Slower appliance arrival" },
+        { color: "#ef4444", label: "Red: Incident response window stretched" },
+        { color: "#8b5cf6", label: "Purple: Community responder support" },
+      ];
 
   return (
     <motion.div
@@ -59,8 +69,11 @@ export function MapLegend({ activeView, onClose }: { activeView: ViewMode; onClo
       className="bg-white border border-surface-200 rounded-lg px-3 py-2.5 shadow-sm"
     >
       <div className="flex items-center gap-2 mb-1.5">
-        <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-          {activeView === "coverage" ? "Coverage Zones" : "Response Capacity"}
+        <div>
+          <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+            {title}
+          </div>
+          <div className="text-[10px] text-slate-400">{subtitle}</div>
         </div>
         {onClose && (
           <button

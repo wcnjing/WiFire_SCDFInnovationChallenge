@@ -1,9 +1,6 @@
 "use client";
 import type { ReactNode } from "react";
-import {
-  ArrowRight,
-  Brain,
-} from "lucide-react";
+import { Activity, Brain, MapPinned, Siren } from "lucide-react";
 import type {
   AIInsight,
   FireStation,
@@ -11,7 +8,6 @@ import type {
   IncidentFilter,
   RecommendedAction,
   ViewMode,
-  WeatherStationImpact,
 } from "@/types";
 import type { SupportingIntelligenceTab } from "@/components/panels/SupportingIntelligenceTabs";
 import RecommendedActionCard from "@/components/panels/RecommendedActionCard";
@@ -26,15 +22,33 @@ interface Props {
   incidentType: IncidentFilter;
   selectedStation: FireStation | null;
   recommendedAction: RecommendedAction | null;
-  stationWeatherImpact: WeatherStationImpact | null;
   overallHealth: number;
   avgResponseTime: number;
   insights: AIInsight[];
+  canOpenUrbanContext: boolean;
   onFocusStation: (station: FireStation) => void;
   onFocusIncident: (incident: Incident) => void;
   onIncidentTypeChange: (type: IncidentFilter) => void;
   onOpenSupportingTab: (tab: SupportingIntelligenceTab) => void;
+  onOpenUrbanContext: () => void;
 }
+
+const VIEW_COPY: Record<ViewMode, {
+  title: string;
+  subtitle: string;
+  incidentHint: string;
+}> = {
+  coverage: {
+    title: "Coverage Surface",
+    subtitle: "Station reachability and response-zone health",
+    incidentHint: "Select an incident to see where local demand is stressing the station network.",
+  },
+  response: {
+    title: "Effective Response",
+    subtitle: "First intervention timing and incident-level response",
+    incidentHint: "Select an incident to compare likely intervention timing and lead dispatch posture.",
+  },
+};
 
 function SectionShell({
   title,
@@ -56,10 +70,42 @@ function SectionShell({
   );
 }
 
-function severityTone(severity: AIInsight["severity"]) {
+function chipTone(type: "good" | "watch" | "critical" | "neutral") {
+  if (type === "good") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (type === "watch") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (type === "critical") return "border-red-200 bg-red-50 text-red-700";
+  return "border-surface-200 bg-surface-50 text-slate-600";
+}
+
+function insightTone(severity: AIInsight["severity"]) {
   if (severity === "critical") return "border-red-200 bg-red-50 text-red-700";
   if (severity === "warning") return "border-amber-200 bg-amber-50 text-amber-700";
   return "border-blue-200 bg-blue-50 text-blue-700";
+}
+
+function responsePosture(action: RecommendedAction | null, activeView: ViewMode, overallHealth: number) {
+  if (!action) {
+    return {
+      label: activeView === "coverage" ? "Awaiting coverage recommendation" : "Awaiting incident recommendation",
+      tone: "neutral" as const,
+    };
+  }
+
+  if (activeView === "coverage") {
+    if (overallHealth < 75) return { label: "Coverage risk elevated", tone: "critical" as const };
+    if (overallHealth < 85) return { label: "Coverage pressure rising", tone: "watch" as const };
+    return { label: "Coverage posture stable", tone: "good" as const };
+  }
+
+  if (action.predictedResponseTime > 11) return { label: "Response window stretched", tone: "critical" as const };
+  if (action.predictedResponseTime > 8) return { label: "Response margin reduced", tone: "watch" as const };
+  return { label: "Response posture stable", tone: "good" as const };
+}
+
+function metricTone(value: number, goodThreshold: number, watchThreshold: number) {
+  if (value <= goodThreshold) return "good" as const;
+  if (value <= watchThreshold) return "watch" as const;
+  return "critical" as const;
 }
 
 export default function CommandSummaryPanel({
@@ -70,190 +116,150 @@ export default function CommandSummaryPanel({
   incidentType,
   selectedStation,
   recommendedAction,
-  stationWeatherImpact,
   overallHealth,
   avgResponseTime,
   insights,
+  canOpenUrbanContext,
   onFocusStation,
   onFocusIncident,
   onIncidentTypeChange,
   onOpenSupportingTab,
+  onOpenUrbanContext,
 }: Props) {
-  const focusStation = selectedStation ?? recommendedAction?.station ?? null;
-  const topInsights = insights.slice(0, 2);
-  const selectedDiffersFromRecommendation = Boolean(
-    selectedStation
-    && recommendedAction
-    && selectedStation.id !== recommendedAction.station.id,
-  );
+  const viewCopy = VIEW_COPY[activeView];
+  const topInsight = insights[0] ?? null;
+  const activeCallsTone = incidents.length >= 6 ? "watch" : "neutral";
+  const coverageTone = overallHealth >= 85 ? "good" : overallHealth >= 75 ? "watch" : "critical";
+  const etaTone = metricTone(avgResponseTime, 8, 11);
+  const posture = responsePosture(recommendedAction, activeView, overallHealth);
 
   return (
-    <aside className="z-20 flex min-h-0 w-[280px] shrink-0 flex-col border-r border-surface-200 bg-white/95 backdrop-blur">
+    <aside className="z-20 flex w-full shrink-0 flex-col border-b border-surface-200 bg-white/95 backdrop-blur lg:min-h-0 lg:w-[320px] lg:border-b-0 lg:border-r xl:w-[340px]">
       <div className="scrollbar-thin flex-1 overflow-y-auto p-3">
         <div className="space-y-3">
+          <section className="rounded-2xl border border-surface-200 bg-[linear-gradient(180deg,rgba(248,250,252,1),rgba(255,255,255,1))] p-3 shadow-sm">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+              Command Summary
+            </div>
+            <div className="mt-2 text-sm font-semibold text-slate-900">{viewCopy.title}</div>
+            <div className="mt-1 text-[11px] leading-relaxed text-slate-500">{viewCopy.subtitle}</div>
+          </section>
+
           <RecommendedActionCard
             action={recommendedAction}
             selectedStation={selectedStation}
-            scenarioLabel={activeView === "coverage" ? "Coverage view" : "Response view"}
+            scenarioLabel={viewCopy.title}
             onFocusStation={onFocusStation}
+            onViewEvidence={() => onOpenSupportingTab("evidence")}
+            onOpenContext={canOpenUrbanContext ? onOpenUrbanContext : undefined}
+            evidenceLabel="View Evidence"
+            contextLabel="Open 3D Context"
           />
 
-          <SectionShell title="Incident & Operational Status">
-            <div className="space-y-3">
+          <SectionShell title="Critical Status Snapshot">
+            <div className="flex flex-wrap gap-2">
+              <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold ${chipTone(activeCallsTone)}`}>
+                <Siren size={12} />
+                {incidents.length} active calls
+              </div>
+              <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold ${chipTone(activeView === "coverage" ? coverageTone : etaTone)}`}>
+                <Activity size={12} />
+                {activeView === "coverage" ? `${overallHealth}% coverage health` : `${avgResponseTime.toFixed(1)}m average appliance ETA`}
+              </div>
+              <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold ${chipTone(posture.tone)}`}>
+                {posture.label}
+              </div>
+            </div>
+          </SectionShell>
+
+          <SectionShell title="Selected Incident Summary">
+            {selectedIncident ? (
               <div className="rounded-xl border border-surface-100 bg-surface-50 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wide text-slate-400">Selected incident</div>
-                    <div className="mt-1 text-sm font-semibold text-slate-900">
-                      {selectedIncident?.desc ?? "No incident selected"}
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-slate-400">
+                      <MapPinned size={10} className="text-slate-400" />
+                      Active focus
                     </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-900">{selectedIncident.desc}</div>
+                    <div className="mt-1 text-[11px] leading-relaxed text-slate-500">{viewCopy.incidentHint}</div>
                   </div>
-                  {selectedIncident && (
-                    <div className="flex items-center gap-1.5">
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                        selectedIncident.type === "fire" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"
-                      }`}>
-                        {selectedIncident.type}
-                      </span>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                        selectedIncident.status === "active" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"
-                      }`}>
-                        {selectedIncident.status}
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <div className="mt-2 text-[11px] text-slate-500">
-                  {selectedIncident
-                    ? `${selectedIncident.severity.toUpperCase()} priority incident`
-                    : "Select an incident from the feed or map to inspect the active recommendation."}
-                </div>
-              </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-xl border border-surface-100 bg-white p-2.5">
-                  <div className="text-[10px] text-slate-400">Active calls</div>
-                  <div className="text-base font-bold font-mono text-slate-900">{incidents.length}</div>
-                </div>
-                <div className="rounded-xl border border-surface-100 bg-white p-2.5">
-                  <div className="text-[10px] text-slate-400">Coverage health</div>
-                  <div className={`text-base font-bold font-mono ${
-                    overallHealth >= 85 ? "text-coverage-green" : overallHealth >= 75 ? "text-coverage-amber" : "text-coverage-red"
-                  }`}>
-                    {overallHealth}%
-                  </div>
-                </div>
-                <div className="rounded-xl border border-surface-100 bg-white p-2.5">
-                  <div className="text-[10px] text-slate-400">Avg response</div>
-                  <div className={`text-base font-bold font-mono ${
-                    avgResponseTime <= 8 ? "text-coverage-green" : avgResponseTime <= 11 ? "text-coverage-amber" : "text-coverage-red"
-                  }`}>
-                    {avgResponseTime.toFixed(1)}m
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                      selectedIncident.type === "fire" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"
+                    }`}>
+                      {selectedIncident.type}
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                      selectedIncident.status === "active" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"
+                    }`}>
+                      {selectedIncident.status}
+                    </span>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                      {selectedIncident.severity}
+                    </span>
                   </div>
                 </div>
               </div>
-
-              <div className="rounded-xl border border-surface-100 bg-white p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wide text-slate-400">
-                      {selectedStation ? "Selected station" : recommendedAction ? "Recommended station" : "Station status"}
-                    </div>
-                    <div className="mt-1 text-sm font-semibold text-slate-900">
-                      {focusStation?.name ?? "No station selected"}
-                    </div>
-                  </div>
-                  {focusStation && (
-                    <button
-                      type="button"
-                      onClick={() => onFocusStation(focusStation)}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 py-1.5 text-[11px] font-semibold text-brand-700 transition-colors hover:bg-brand-100"
-                    >
-                      Focus on map
-                      <ArrowRight size={12} />
-                    </button>
-                  )}
-                </div>
-
-                {focusStation ? (
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <div className="rounded-xl border border-surface-100 bg-surface-50 p-2.5">
-                      <div className="text-[10px] text-slate-400">Readiness</div>
-                      <div className="text-sm font-bold font-mono text-slate-900">{focusStation.readiness}%</div>
-                    </div>
-                    <div className="rounded-xl border border-surface-100 bg-surface-50 p-2.5">
-                      <div className="text-[10px] text-slate-400">Units</div>
-                      <div className="text-sm font-bold font-mono text-slate-900">{focusStation.units}</div>
-                    </div>
-                    <div className="rounded-xl border border-surface-100 bg-surface-50 p-2.5">
-                      <div className="text-[10px] text-slate-400">Weather drag</div>
-                      <div className={`text-sm font-bold font-mono ${
-                        (stationWeatherImpact?.penalty ?? 0) >= 1 ? "text-coverage-red" : (stationWeatherImpact?.penalty ?? 0) >= 0.45 ? "text-coverage-amber" : "text-coverage-green"
-                      }`}>
-                        +{(stationWeatherImpact?.penalty ?? 0).toFixed(1)}m
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-2 text-[11px] text-slate-500">
-                    The recommendation card will surface a station once the active operational context is available.
-                  </div>
-                )}
-
-                {selectedDiffersFromRecommendation && recommendedAction && (
-                  <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
-                    Current map focus differs from the lead recommendation. The prototype currently prefers {recommendedAction.station.name}.
-                  </div>
-                )}
+            ) : (
+              <div className="rounded-xl border border-dashed border-surface-200 bg-surface-50 px-3 py-4 text-[11px] leading-relaxed text-slate-500">
+                {viewCopy.incidentHint}
               </div>
+            )}
+          </SectionShell>
 
+          <SectionShell title="Compact Incident Feed">
+            <div className="space-y-3">
               <IncidentSelector value={incidentType} onChange={onIncidentTypeChange} />
-              <IncidentFeed incidents={incidents} selectedIncidentId={selectedIncidentId} onSelectIncident={onFocusIncident} />
+              <IncidentFeed
+                incidents={incidents}
+                selectedIncidentId={selectedIncidentId}
+                onSelectIncident={onFocusIncident}
+                compact
+                maxVisible={6}
+              />
             </div>
           </SectionShell>
 
           <SectionShell
-            title="Operational Insights"
+            title="Top Operational Insight"
             action={(
               <button
                 type="button"
-                onClick={() => onOpenSupportingTab("forecasting")}
+                onClick={() => onOpenSupportingTab("forecast-controls")}
                 className="text-[11px] font-semibold text-brand-700 transition-colors hover:text-brand-800"
               >
-                Open full forecast
+                View all insights
               </button>
             )}
           >
-            <div className="space-y-2">
-              {topInsights.map((insight) => (
-                <div key={insight.id} className="rounded-xl border border-surface-100 bg-surface-50 p-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${severityTone(insight.severity)}`}>
-                      {insight.severity}
-                    </span>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                      {insight.region}
-                    </span>
-                    <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-medium text-slate-400">
-                      <Brain size={11} className="text-slate-400" />
-                      Prototype forecast
-                    </span>
-                  </div>
-                  <div className="mt-2 text-xs font-semibold text-slate-900">
-                    {insight.prediction ?? insight.text}
-                  </div>
-                  <div className="mt-1 text-[11px] leading-relaxed text-slate-600">
-                    {insight.action ?? insight.impact ?? insight.text}
-                  </div>
+            {topInsight ? (
+              <div className="rounded-xl border border-surface-100 bg-surface-50 p-3">
+                <div className="flex items-center gap-2">
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${insightTone(topInsight.severity)}`}>
+                    {topInsight.severity}
+                  </span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                    {topInsight.region}
+                  </span>
+                  <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-medium text-slate-400">
+                    <Brain size={11} className="text-slate-400" />
+                    AI-assisted insight
+                  </span>
                 </div>
-              ))}
-
-              {topInsights.length === 0 && (
-                <div className="rounded-xl border border-dashed border-surface-200 bg-white px-3 py-4 text-[11px] text-slate-500">
-                  Prototype forecast indicators will appear here when the current scenario produces operational signals.
+                <div className="mt-2 text-xs font-semibold text-slate-900">
+                  {topInsight.prediction ?? topInsight.text}
                 </div>
-              )}
-            </div>
+                <div className="mt-1 text-[11px] leading-relaxed text-slate-600">
+                  {topInsight.action ?? topInsight.impact ?? topInsight.text}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-surface-200 bg-white px-3 py-4 text-[11px] text-slate-500">
+                Operational insights will appear here when the prototype forecast layer detects a useful signal.
+              </div>
+            )}
           </SectionShell>
         </div>
       </div>

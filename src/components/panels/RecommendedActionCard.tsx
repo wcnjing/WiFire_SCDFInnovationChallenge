@@ -1,6 +1,6 @@
 "use client";
 import { motion } from "framer-motion";
-import { ArrowRight, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, Boxes, ShieldCheck, Sparkles } from "lucide-react";
 import type { FireStation, RecommendedAction } from "@/types";
 
 interface Props {
@@ -9,11 +9,32 @@ interface Props {
   scenarioLabel: string;
   onFocusStation: (station: FireStation) => void;
   onViewEvidence?: () => void;
+  onOpenContext?: () => void;
   evidenceLabel?: string;
+  contextLabel?: string;
 }
 
 function formatMinutes(value: number) {
   return `${value.toFixed(1)} min`;
+}
+
+function postureTone(action: RecommendedAction) {
+  if (action.predictedResponseTime > 11) {
+    return {
+      badge: "border-red-200 bg-red-50 text-red-700",
+      label: "Elevated response risk",
+    };
+  }
+  if (action.predictedResponseTime > 8) {
+    return {
+      badge: "border-amber-200 bg-amber-50 text-amber-700",
+      label: "Monitor corridor pressure",
+    };
+  }
+  return {
+    badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    label: "Stable dispatch posture",
+  };
 }
 
 export default function RecommendedActionCard({
@@ -22,7 +43,9 @@ export default function RecommendedActionCard({
   scenarioLabel,
   onFocusStation,
   onViewEvidence,
+  onOpenContext,
   evidenceLabel = "View evidence",
+  contextLabel = "Open 3D Context",
 }: Props) {
   if (!action) {
     return (
@@ -39,6 +62,7 @@ export default function RecommendedActionCard({
   }
 
   const isSelected = selectedStation?.id === action.station.id;
+  const posture = postureTone(action);
 
   return (
     <motion.section
@@ -53,64 +77,80 @@ export default function RecommendedActionCard({
             <Sparkles size={12} className="text-brand-600" />
             Recommended Action
           </div>
-          <div className="mt-1 flex items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-bold tracking-tight text-slate-900">{action.station.name}</h2>
             <span className="rounded-full border border-brand-200 bg-white/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-700">
               {scenarioLabel}
             </span>
           </div>
+          <p className="mt-1 text-xs leading-relaxed text-slate-600">
+            {action.reason}
+          </p>
         </div>
         <div className="rounded-xl border border-brand-200 bg-white/90 px-3 py-2 text-right shadow-sm">
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">Predicted response</div>
+          <div className="text-[10px] uppercase tracking-wide text-slate-400">Estimated arrival</div>
           <div className="text-lg font-bold font-mono text-brand-900">{formatMinutes(action.predictedResponseTime)}</div>
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <div className="rounded-xl border border-white/70 bg-white/80 p-3">
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">Reason</div>
-          <p className="mt-1 text-xs leading-relaxed text-slate-700">{action.reason}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${posture.badge}`}>
+          <ShieldCheck size={11} />
+          {posture.label}
         </div>
-        <div className="rounded-xl border border-white/70 bg-white/80 p-3">
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">Coverage impact</div>
-          <p className="mt-1 text-xs leading-relaxed text-slate-700">{action.coverageImpact}</p>
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-surface-200 bg-white/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+          {action.station.readiness}% ready
         </div>
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-surface-200 bg-white/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+          <Boxes size={11} />
+          {action.station.units} units
+        </div>
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+          {action.confidence}% confidence
+        </div>
+        {isSelected && (
+          <div className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-brand-700">
+            Selected on map
+          </div>
+        )}
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
-            <ShieldCheck size={11} />
-            {action.confidence}% confidence
-          </div>
-          {isSelected && (
-            <div className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-brand-700">
-              Selected on map
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {onViewEvidence && (
-            <button
-              type="button"
-              onClick={onViewEvidence}
-              className="inline-flex items-center gap-1.5 rounded-full border border-surface-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition-colors hover:bg-surface-50"
-            >
-              {evidenceLabel}
-              <ArrowRight size={12} />
-            </button>
-          )}
-          {!isSelected && (
-            <button
-              type="button"
-              onClick={() => onFocusStation(action.station)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-brand-700 transition-colors hover:bg-brand-50"
-            >
-              Focus station
-              <ArrowRight size={12} />
-            </button>
-          )}
-        </div>
+      <div className="mt-3 rounded-xl border border-white/70 bg-white/80 p-3">
+        <div className="text-[10px] uppercase tracking-wide text-slate-400">Operational effect</div>
+        <p className="mt-1 text-xs leading-relaxed text-slate-700">{action.coverageImpact}</p>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {onViewEvidence && (
+          <button
+            type="button"
+            onClick={onViewEvidence}
+            className="inline-flex items-center gap-1.5 rounded-full border border-surface-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition-colors hover:bg-surface-50"
+          >
+            {evidenceLabel}
+            <ArrowRight size={12} />
+          </button>
+        )}
+        {onOpenContext && (
+          <button
+            type="button"
+            onClick={onOpenContext}
+            className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 py-1.5 text-[11px] font-semibold text-brand-700 transition-colors hover:bg-brand-100"
+          >
+            {contextLabel}
+            <ArrowRight size={12} />
+          </button>
+        )}
+        {!isSelected && (
+          <button
+            type="button"
+            onClick={() => onFocusStation(action.station)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-surface-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition-colors hover:bg-surface-50"
+          >
+            Focus station
+            <ArrowRight size={12} />
+          </button>
+        )}
       </div>
     </motion.section>
   );

@@ -3,9 +3,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AI_INSIGHTS, FIRE_STATIONS, REGIONS } from "@/data/mock";
 import { useAppState } from "@/hooks/useAppState";
 import TopBar from "@/components/ui/TopBar";
-import PanelToggle from "@/components/ui/PanelToggle";
 import CommandSummaryPanel from "@/components/panels/CommandSummaryPanel";
 import SupportingIntelligenceDrawer from "@/components/panels/SupportingIntelligenceDrawer";
+import UrbanIncidentContextModal from "@/components/panels/UrbanIncidentContextModal";
 import type { SupportingIntelligenceTab } from "@/components/panels/SupportingIntelligenceTabs";
 import SingaporeMap from "@/components/map/SingaporeMap";
 import { MapLegend, TrafficCameraPreview } from "@/components/map/MapOverlays";
@@ -112,7 +112,8 @@ export default function HomePage() {
   const scenario: ScenarioPreset = "normal";
   const [showMapLegend, setShowMapLegend] = useState(true);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<RankedTrafficCameraSnapshot | null>(null);
-  const [supportingTab, setSupportingTab] = useState<SupportingIntelligenceTab>("route");
+  const [supportingTab, setSupportingTab] = useState<SupportingIntelligenceTab>("evidence");
+  const [isUrbanContextModalOpen, setIsUrbanContextModalOpen] = useState(false);
   const [selectedUrbanBuildingId, setSelectedUrbanBuildingId] = useState<string | null>(null);
   const [focusUrbanBuildingRequestKey, setFocusUrbanBuildingRequestKey] = useState(0);
   const [openUrbanBuildingPopupRequestKey, setOpenUrbanBuildingPopupRequestKey] = useState(0);
@@ -258,10 +259,12 @@ export default function HomePage() {
     actions.setRightPanelOpen(true);
   }, [actions]);
 
-  const openIncidentUrbanContext = useCallback((incident: Incident) => {
-    focusIncidentOnMap(incident);
-    openSupportingDrawer("environment");
-  }, [focusIncidentOnMap, openSupportingDrawer]);
+  const openUrbanContextModal = useCallback((incident?: Incident | null) => {
+    if (incident) {
+      focusIncidentOnMap(incident);
+    }
+    setIsUrbanContextModalOpen(true);
+  }, [focusIncidentOnMap]);
 
   const closeSupportingDrawer = useCallback(() => {
     actions.setRightPanelOpen(false);
@@ -412,7 +415,7 @@ export default function HomePage() {
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <TopBar activeView={state.activeView} onViewChange={actions.setView} sourceStatuses={sourceStatuses} />
-      <div className="relative flex flex-1 flex-row overflow-x-auto overflow-y-hidden">
+      <div className="relative flex flex-1 flex-col overflow-hidden lg:flex-row">
         <CommandSummaryPanel
           activeView={state.activeView}
           selectedIncident={selectedRouteIncident}
@@ -421,17 +424,18 @@ export default function HomePage() {
           incidentType={state.incidentType}
           selectedStation={state.selectedStation}
           recommendedAction={recommendedAction}
-          stationWeatherImpact={focusStationWeatherImpact}
           overallHealth={overallHealth}
           avgResponseTime={avgResponseTime}
           insights={headlineInsights}
+          canOpenUrbanContext={Boolean(selectedRouteIncident)}
           onFocusStation={actions.selectStation}
           onFocusIncident={focusIncidentOnMap}
           onIncidentTypeChange={actions.setIncidentType}
           onOpenSupportingTab={openSupportingDrawer}
+          onOpenUrbanContext={() => openUrbanContextModal(selectedRouteIncident)}
         />
 
-        <div className="relative min-w-[420px] flex-1 overflow-hidden bg-surface-50">
+        <div className="relative min-h-[420px] min-w-0 flex-1 overflow-hidden bg-surface-50 lg:min-h-0">
           <div className="h-full w-full">
             <SingaporeMap
               stations={FIRE_STATIONS}
@@ -461,7 +465,7 @@ export default function HomePage() {
               openUrbanBuildingPopupRequestKey={openUrbanBuildingPopupRequestKey}
               onUrbanBuildingClick={selectUrbanBuilding}
               onIncidentClick={focusIncidentOnMap}
-              onIncidentShow3D={openIncidentUrbanContext}
+              onIncidentShow3D={openUrbanContextModal}
             />
           </div>
 
@@ -469,10 +473,10 @@ export default function HomePage() {
             {!state.rightPanelOpen && (
               <button
                 type="button"
-                onClick={() => openSupportingDrawer("route")}
+                onClick={() => openSupportingDrawer("evidence")}
                 className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-surface-200 bg-white px-3.5 py-2 text-[11px] font-semibold text-slate-700 shadow-sm transition-colors hover:bg-surface-50"
               >
-                Supporting Intelligence
+                Open Supporting Intelligence
               </button>
             )}
           </div>
@@ -486,7 +490,7 @@ export default function HomePage() {
                 onClick={() => setShowMapLegend(true)}
                 className="rounded-full border border-surface-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
               >
-                Show Coverage Zones
+                Show map legend
               </button>
             )}
           </div>
@@ -503,12 +507,6 @@ export default function HomePage() {
           )}
         </div>
 
-        <PanelToggle
-          side="right"
-          isOpen={state.rightPanelOpen}
-          onClick={() => (state.rightPanelOpen ? closeSupportingDrawer() : openSupportingDrawer("route"))}
-        />
-
         <SupportingIntelligenceDrawer
           state={state}
           isOpen={state.rightPanelOpen}
@@ -519,7 +517,6 @@ export default function HomePage() {
           incidents={routeIncidents}
           insights={combinedInsights}
           recommendedAction={recommendedAction}
-          scenario={scenario}
           neaStatus={neaStatus}
           onFocusStation={actions.selectStation}
           onTabChange={setSupportingTab}
@@ -550,8 +547,23 @@ export default function HomePage() {
           selectedUrbanBuildingId={selectedUrbanBuilding?.id ?? null}
           onSelectUrbanBuilding={selectUrbanBuilding}
           onRefreshUrbanContext={refetchUrbanContext}
+          onOpenUrbanContext={() => openUrbanContextModal(selectedRouteIncident)}
         />
       </div>
+
+      <UrbanIncidentContextModal
+        isOpen={isUrbanContextModalOpen}
+        incident={selectedRouteIncident}
+        buildings={urbanContextBuildings}
+        loading={urbanContextLoading}
+        error={urbanContextError}
+        isFallback={urbanContextFallback}
+        source={urbanContextSource}
+        selectedBuildingId={selectedUrbanBuilding?.id ?? null}
+        onSelectBuilding={selectUrbanBuilding}
+        onRefresh={refetchUrbanContext}
+        onClose={() => setIsUrbanContextModalOpen(false)}
+      />
     </div>
   );
 }

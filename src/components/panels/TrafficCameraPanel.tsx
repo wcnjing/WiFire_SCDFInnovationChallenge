@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { Camera, LoaderCircle, MapPinned, RefreshCw } from "lucide-react";
+import { Camera, ChevronDown, ChevronUp, LoaderCircle, MapPinned, RefreshCw } from "lucide-react";
 import type { FireStation, Incident, TrafficCameraSnapshot } from "@/types";
 import { buildTrafficCameraFocusPoints, rankTrafficCameraSnapshots, type RankedTrafficCameraSnapshot } from "@/lib/trafficCameras";
 
@@ -13,6 +13,8 @@ interface Props {
   error: string | null;
   lastUpdated: string | null;
   onRefresh: () => void | Promise<void>;
+  showHeader?: boolean;
+  maxInitialItems?: number;
 }
 
 const UNAVAILABLE_MESSAGE = "Traffic camera snapshots unavailable. Add LTA_ACCOUNT_KEY to .env.local to enable this feature.";
@@ -80,6 +82,8 @@ export default function TrafficCameraPanel({
   error,
   lastUpdated,
   onRefresh,
+  showHeader = true,
+  maxInitialItems,
 }: Props) {
   const focusPoints = useMemo(
     () => buildTrafficCameraFocusPoints(selectedStation, incidents, selectedIncidentId),
@@ -90,20 +94,28 @@ export default function TrafficCameraPanel({
     [cameras, focusPoints],
   );
   const updatedLabel = formatUpdatedLabel(lastUpdated);
+  const [showAll, setShowAll] = useState(false);
+  const displayedCameras = useMemo(() => {
+    if (!maxInitialItems || showAll) return visibleCameras;
+    return visibleCameras.slice(0, maxInitialItems);
+  }, [maxInitialItems, showAll, visibleCameras]);
+  const hiddenCameraCount = Math.max(visibleCameras.length - displayedCameras.length, 0);
 
   return (
     <section className="rounded-2xl border border-surface-200 bg-white/95 p-3 shadow-sm">
-      <div className="flex items-center gap-2">
-        <Camera size={13} className="text-slate-400" />
-        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-          Traffic Camera Evidence
+      {showHeader && (
+        <div className="flex items-center gap-2">
+          <Camera size={13} className="text-slate-400" />
+          <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+            Traffic Camera Evidence
+          </div>
+          {updatedLabel && <div className="ml-auto text-[10px] font-mono text-slate-400">{updatedLabel}</div>}
         </div>
-        {updatedLabel && <div className="ml-auto text-[10px] font-mono text-slate-400">{updatedLabel}</div>}
-      </div>
+      )}
 
       <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-surface-100 bg-surface-50 px-3 py-2">
         <p className="text-[11px] leading-relaxed text-slate-600">
-          Snapshots provide visual context for congestion and response corridor analysis near selected stations and live incident areas.
+          Closest LTA snapshots around the active route and incident corridor for quick congestion checks.
         </p>
         <button
           type="button"
@@ -139,10 +151,30 @@ export default function TrafficCameraPanel({
 
       {visibleCameras.length > 0 && (
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {visibleCameras.map((camera) => (
+          {displayedCameras.map((camera) => (
             <SnapshotTile key={camera.cameraId} camera={camera} />
           ))}
         </div>
+      )}
+
+      {maxInitialItems && visibleCameras.length > maxInitialItems && (
+        <button
+          type="button"
+          onClick={() => setShowAll((current) => !current)}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-surface-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-surface-50 hover:text-slate-800"
+        >
+          {showAll ? (
+            <>
+              Show fewer cameras
+              <ChevronUp size={12} />
+            </>
+          ) : (
+            <>
+              Show {hiddenCameraCount} more camera{hiddenCameraCount === 1 ? "" : "s"}
+              <ChevronDown size={12} />
+            </>
+          )}
+        </button>
       )}
     </section>
   );

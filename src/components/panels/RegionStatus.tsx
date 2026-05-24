@@ -6,6 +6,7 @@ interface Props {
   timeOffset: TimeOffset;
   weatherImpacts?: WeatherRegionImpact[];
   showHeader?: boolean;
+  maxItems?: number;
 }
 
 const weatherTone = {
@@ -22,8 +23,15 @@ function trendLabel(trend: Region["trend"]) {
   return { glyph: "STABLE", tone: "text-coverage-green" };
 }
 
-export default function RegionStatus({ regions, timeOffset, weatherImpacts = [], showHeader = true }: Props) {
+export default function RegionStatus({
+  regions,
+  timeOffset,
+  weatherImpacts = [],
+  showHeader = true,
+  maxItems,
+}: Props) {
   const impactMap = new Map(weatherImpacts.map((impact) => [impact.region, impact]));
+  const visibleRegions = maxItems ? regions.slice(0, maxItems) : regions;
 
   return (
     <div>
@@ -31,7 +39,7 @@ export default function RegionStatus({ regions, timeOffset, weatherImpacts = [],
         <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Regional Status</div>
       )}
       <div className="space-y-2">
-        {regions.map((region) => {
+        {visibleRegions.map((region) => {
           const impact = impactMap.get(region.name);
           const health = Math.max(Math.round(region.health - timeOffset * 0.3 - ((impact?.penalty ?? 0) * 6)), 50);
           const barTone = health >= 85 ? "bg-coverage-green" : health >= 75 ? "bg-coverage-amber" : "bg-coverage-red";
