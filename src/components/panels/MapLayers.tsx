@@ -15,15 +15,18 @@ function Toggle({ label, icon, enabled, onToggle }: { label: string; icon: React
 interface Props {
   showTraffic: boolean; showWeather: boolean; showIncidents: boolean;
   onToggleTraffic: () => void; onToggleWeather: () => void; onToggleIncidents: () => void;
+  showHeader?: boolean;
 }
 
 export default function MapLayers(p: Props) {
   return (
     <div>
-      <div className="flex items-center gap-1.5 mb-2">
-        <Layers size={11} className="text-slate-400" />
-        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Map Layers</span>
-      </div>
+      {p.showHeader !== false && (
+        <div className="mb-2 flex items-center gap-1.5">
+          <Layers size={11} className="text-slate-400" />
+          <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Map Layers</span>
+        </div>
+      )}
       <div className="space-y-0.5">
         <Toggle label="Traffic Overlay" icon={<Truck size={12} className="text-slate-400"/>} enabled={p.showTraffic} onToggle={p.onToggleTraffic} />
         <Toggle label="Weather" icon={<CloudRain size={12} className="text-slate-400"/>} enabled={p.showWeather} onToggle={p.onToggleWeather} />

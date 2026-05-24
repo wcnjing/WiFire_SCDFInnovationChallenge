@@ -140,14 +140,14 @@ function heightCategoryForHeight(height: number): UrbanBuildingContext["heightCa
 
 export function createFallbackUrbanBuildings(lat: number, lng: number, radius: number) {
   const offsets = [
-    { x: -64, y: -38, width: 40, depth: 30, height: 52, type: "Commercial" },
-    { x: -20, y: -18, width: 26, depth: 22, height: 28, type: "Mixed Use" },
-    { x: 16, y: -12, width: 34, depth: 26, height: 62, type: "Residential" },
-    { x: 56, y: -42, width: 38, depth: 28, height: 20, type: "Industrial" },
-    { x: -54, y: 18, width: 24, depth: 20, height: 16, type: "Residential" },
-    { x: -8, y: 14, width: 30, depth: 24, height: 46, type: "Commercial" },
-    { x: 34, y: 22, width: 42, depth: 30, height: 34, type: "Mixed Use" },
-    { x: 76, y: 14, width: 22, depth: 18, height: 14, type: "Residential" },
+    { x: -64, y: -38, width: 40, depth: 30, height: 52, type: "Commercial", blockNumber: "101", name: "Harbour View Tower", roadName: "Command Avenue" },
+    { x: -20, y: -18, width: 26, depth: 22, height: 28, type: "Mixed Use", blockNumber: "103", name: "Incident Access Block", roadName: "Command Avenue" },
+    { x: 16, y: -12, width: 34, depth: 26, height: 62, type: "Residential", blockNumber: "105", name: "Skyline Residences", roadName: "Response Street" },
+    { x: 56, y: -42, width: 38, depth: 28, height: 20, type: "Industrial", blockNumber: "107", name: "Logistics Annex", roadName: "Response Street" },
+    { x: -54, y: 18, width: 24, depth: 20, height: 16, type: "Residential", blockNumber: "109", name: "Urban Block 5", roadName: "Fireground Link" },
+    { x: -8, y: 14, width: 30, depth: 24, height: 46, type: "Commercial", blockNumber: "111", name: "Meridian Offices", roadName: "Fireground Link" },
+    { x: 34, y: 22, width: 42, depth: 30, height: 34, type: "Mixed Use", blockNumber: "113", name: "Riverpoint Suites", roadName: "Operations Way" },
+    { x: 76, y: 14, width: 22, depth: 18, height: 14, type: "Residential", blockNumber: "115", name: "Urban Block 8", roadName: "Operations Way" },
   ] as const;
 
   const buildings: UrbanBuildingContext[] = offsets.map((offset, index) => {
@@ -165,10 +165,15 @@ export function createFallbackUrbanBuildings(lat: number, lng: number, radius: n
 
     return {
       id: `fallback-building-${index + 1}`,
-      name: index === 1 ? "Probable Incident Access Block" : `Urban Block ${index + 1}`,
+      name: offset.name,
+      blockNumber: offset.blockNumber,
+      roadName: offset.roadName,
+      postalCode: `12${String(index + 1).padStart(4, "0")}`,
+      fullAddress: `Blk ${offset.blockNumber} ${offset.roadName}, Singapore 12${String(index + 1).padStart(4, "0")}`,
       buildingType: offset.type,
       estimatedHeight: offset.height,
       heightCategory: heightCategoryForHeight(offset.height),
+      centroid: { lat: centerLat, lng: centerLng },
       coordinates,
       distanceFromIncidentMeters: estimateDistanceMeters(lat, lng, centerLat, centerLng),
       isLikelyIncidentBuilding: false,

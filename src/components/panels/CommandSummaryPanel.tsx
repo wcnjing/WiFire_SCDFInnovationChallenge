@@ -3,30 +3,20 @@ import type { ReactNode } from "react";
 import {
   ArrowRight,
   Brain,
-  Siren,
-  ThermometerSun,
-  TrafficCone,
 } from "lucide-react";
 import type {
   AIInsight,
   FireStation,
   Incident,
   IncidentFilter,
-  OneMapRouteData,
-  OneMapRouteMode,
   RecommendedAction,
-  SourceStatus,
-  TimeOffset,
   ViewMode,
-  WeatherSummary,
   WeatherStationImpact,
 } from "@/types";
-import type { LTATravelTime } from "@/hooks/useLTAData";
 import type { SupportingIntelligenceTab } from "@/components/panels/SupportingIntelligenceTabs";
 import RecommendedActionCard from "@/components/panels/RecommendedActionCard";
 import IncidentFeed from "@/components/panels/IncidentFeed";
 import IncidentSelector from "@/components/panels/IncidentSelector";
-import TimeSlider from "@/components/panels/TimeSlider";
 
 interface Props {
   activeView: ViewMode;
@@ -39,18 +29,10 @@ interface Props {
   stationWeatherImpact: WeatherStationImpact | null;
   overallHealth: number;
   avgResponseTime: number;
-  ltaStatus: SourceStatus;
-  ltaTravelTimes: LTATravelTime[];
-  oneMapRoute: OneMapRouteData | null;
-  routeMode: OneMapRouteMode;
-  timeOffset: TimeOffset;
   insights: AIInsight[];
-  weatherSummary: WeatherSummary;
-  onTimeChange: (offset: TimeOffset) => void;
   onFocusStation: (station: FireStation) => void;
   onFocusIncident: (incident: Incident) => void;
   onIncidentTypeChange: (type: IncidentFilter) => void;
-  onOpenRecommendationEvidence: () => void;
   onOpenSupportingTab: (tab: SupportingIntelligenceTab) => void;
 }
 
@@ -74,84 +56,10 @@ function SectionShell({
   );
 }
 
-function formatMinutes(value: number) {
-  return `${value.toFixed(1)} min`;
-}
-
-function parseTravelTimeMinutes(value: string | number) {
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 function severityTone(severity: AIInsight["severity"]) {
   if (severity === "critical") return "border-red-200 bg-red-50 text-red-700";
   if (severity === "warning") return "border-amber-200 bg-amber-50 text-amber-700";
   return "border-blue-200 bg-blue-50 text-blue-700";
-}
-
-function weatherNeedsAttention(summary: WeatherSummary) {
-  const forecast = summary.twentyFourGeneralForecast?.toLowerCase() ?? "";
-  return (
-    summary.topRegionPenalty >= 0.55
-    || summary.peakRainfall >= 1
-    || forecast.includes("thunder")
-    || forecast.includes("heavy")
-  );
-}
-
-function buildTrafficSummary(params: {
-  oneMapRoute: OneMapRouteData | null;
-  selectedIncident: Incident | null;
-  selectedStation: FireStation | null;
-  routeMode: OneMapRouteMode;
-  ltaTravelTimes: LTATravelTime[];
-  ltaStatus: SourceStatus;
-}) {
-  const segments = params.ltaTravelTimes
-    .map((segment) => {
-      const minutes = parseTravelTimeMinutes(segment.EstTime);
-      return minutes === null ? null : { ...segment, minutes };
-    })
-    .filter((segment): segment is LTATravelTime & { minutes: number } => segment !== null)
-    .sort((left, right) => right.minutes - left.minutes);
-
-  const slowestSegment = segments[0] ?? null;
-
-  if (params.oneMapRoute && params.selectedIncident && params.selectedStation) {
-    const routeMinutes = Math.max(params.oneMapRoute.summary.totalTimeSeconds / 60, 0.1);
-
-    return {
-      headline: `${params.routeMode.toUpperCase()} route to ${params.selectedIncident.desc}`,
-      detail: `${params.selectedStation.name} to incident target is currently ${formatMinutes(routeMinutes)}.`,
-      corridor: slowestSegment?.Name ?? null,
-      etaImpact: slowestSegment ? `${slowestSegment.Name} currently shows ${slowestSegment.minutes} min corridor travel.` : null,
-    };
-  }
-
-  if (slowestSegment) {
-    return {
-      headline: `${slowestSegment.Name} is the key disrupted corridor`,
-      detail: `${slowestSegment.StartPoint} to ${slowestSegment.EndPoint} towards ${slowestSegment.FarEndPoint}.`,
-      corridor: slowestSegment.Name,
-      etaImpact: `${slowestSegment.minutes} min corridor ETA.`,
-    };
-  }
-
-  if (params.ltaStatus.mode === "mock") {
-    return {
-      headline: "Traffic view is running in prototype fallback mode",
-      detail: "Simulated LTA traffic conditions are being used so the operational demo remains available.",
-      corridor: null,
-      etaImpact: null,
-    };
-  }
-
-  return {
-    headline: "Traffic conditions are loading",
-    detail: "Open supporting intelligence to review corridor evidence, route metrics, and traffic camera context.",
-    corridor: null,
-    etaImpact: null,
-  };
 }
 
 export default function CommandSummaryPanel({
@@ -165,40 +73,14 @@ export default function CommandSummaryPanel({
   stationWeatherImpact,
   overallHealth,
   avgResponseTime,
-  ltaStatus,
-  ltaTravelTimes,
-  oneMapRoute,
-  routeMode,
-  timeOffset,
   insights,
-  weatherSummary,
-  onTimeChange,
   onFocusStation,
   onFocusIncident,
   onIncidentTypeChange,
-  onOpenRecommendationEvidence,
   onOpenSupportingTab,
 }: Props) {
   const focusStation = selectedStation ?? recommendedAction?.station ?? null;
-  const trafficSummary = buildTrafficSummary({
-    oneMapRoute,
-    selectedIncident,
-    selectedStation,
-    routeMode,
-    ltaTravelTimes,
-    ltaStatus,
-  });
   const topInsights = insights.slice(0, 2);
-  const viewContext = activeView === "coverage"
-    ? {
-        label: "Live Coverage Surface",
-        description: "Area reachability under current traffic, weather, and disruption conditions.",
-      }
-    : {
-        label: "Effective Response Time",
-        description: "Fastest competent intervention view using the current prototype response model.",
-      };
-  const needsWeatherAttention = weatherNeedsAttention(weatherSummary);
   const selectedDiffersFromRecommendation = Boolean(
     selectedStation
     && recommendedAction
@@ -206,30 +88,14 @@ export default function CommandSummaryPanel({
   );
 
   return (
-    <aside className="z-20 flex max-h-[46vh] w-full shrink-0 flex-col border-b border-surface-200 bg-white/95 backdrop-blur lg:max-h-none lg:w-[320px] lg:border-b-0 lg:border-r xl:w-[340px]">
+    <aside className="z-20 flex min-h-0 w-[280px] shrink-0 flex-col border-r border-surface-200 bg-white/95 backdrop-blur">
       <div className="scrollbar-thin flex-1 overflow-y-auto p-3">
-        <div className="mb-3 rounded-2xl border border-surface-200 bg-[linear-gradient(135deg,rgba(248,250,252,1),rgba(239,246,255,0.96))] p-4 shadow-sm">
-          <div className="flex items-center gap-2">
-            <Siren size={14} className="text-brand-700" />
-            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-700">Command Summary</div>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-bold text-slate-900">{viewContext.label}</h2>
-            <span className="rounded-full border border-surface-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-              +{timeOffset}m horizon
-            </span>
-          </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{viewContext.description}</p>
-        </div>
-
         <div className="space-y-3">
           <RecommendedActionCard
             action={recommendedAction}
             selectedStation={selectedStation}
             scenarioLabel={activeView === "coverage" ? "Coverage view" : "Response view"}
             onFocusStation={onFocusStation}
-            onViewEvidence={onOpenRecommendationEvidence}
-            evidenceLabel="Why this recommendation?"
           />
 
           <SectionShell title="Incident & Operational Status">
@@ -345,88 +211,6 @@ export default function CommandSummaryPanel({
               <IncidentFeed incidents={incidents} selectedIncidentId={selectedIncidentId} onSelectIncident={onFocusIncident} />
             </div>
           </SectionShell>
-
-          <SectionShell
-            title="Key Traffic Conditions"
-            action={(
-              <button
-                type="button"
-                onClick={() => onOpenSupportingTab("route")}
-                className="text-[11px] font-semibold text-brand-700 transition-colors hover:text-brand-800"
-              >
-                View evidence
-              </button>
-            )}
-          >
-            <div className="rounded-xl border border-surface-100 bg-surface-50 p-3">
-              <div className="flex items-start gap-2">
-                <TrafficCone size={14} className="mt-0.5 shrink-0 text-slate-400" />
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">{trafficSummary.headline}</div>
-                  <div className="mt-1 text-[11px] leading-relaxed text-slate-600">{trafficSummary.detail}</div>
-                </div>
-              </div>
-              {(trafficSummary.corridor || trafficSummary.etaImpact) && (
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <div className="rounded-xl border border-surface-100 bg-white p-2.5">
-                    <div className="text-[10px] text-slate-400">Key corridor</div>
-                    <div className="text-xs font-semibold text-slate-900">{trafficSummary.corridor ?? "Monitoring"}</div>
-                  </div>
-                  <div className="rounded-xl border border-surface-100 bg-white p-2.5">
-                    <div className="text-[10px] text-slate-400">ETA impact</div>
-                    <div className="text-xs font-semibold text-slate-900">{trafficSummary.etaImpact ?? "No material delay"}</div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </SectionShell>
-
-          <SectionShell title="Prediction Window">
-            <TimeSlider value={timeOffset} onChange={onTimeChange} />
-          </SectionShell>
-
-          {needsWeatherAttention && (
-            <SectionShell
-              title="Environment Watch"
-              action={(
-                <button
-                  type="button"
-                  onClick={() => onOpenSupportingTab("environment")}
-                  className="text-[11px] font-semibold text-brand-700 transition-colors hover:text-brand-800"
-                >
-                  Open details
-                </button>
-              )}
-            >
-              <div className="rounded-xl border border-blue-100 bg-blue-50 p-3">
-                <div className="flex items-start gap-2">
-                  <ThermometerSun size={14} className="mt-0.5 shrink-0 text-blue-600" />
-                  <div>
-                    <div className="text-sm font-semibold text-blue-900">
-                      {weatherSummary.topRegion
-                        ? `${weatherSummary.topRegion} is carrying the highest weather drag`
-                        : "Weather conditions need attention"}
-                    </div>
-                    <div className="mt-1 text-[11px] leading-relaxed text-blue-800">
-                      {weatherSummary.topRegionForecast ?? weatherSummary.twentyFourGeneralForecast ?? "Localized rain and forecast pressure are affecting travel confidence."}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <div className="rounded-xl border border-blue-100 bg-white p-2.5">
-                    <div className="text-[10px] text-blue-500">Operational drag</div>
-                    <div className="text-sm font-bold font-mono text-blue-900">+{weatherSummary.topRegionPenalty.toFixed(1)}m</div>
-                  </div>
-                  <div className="rounded-xl border border-blue-100 bg-white p-2.5">
-                    <div className="text-[10px] text-blue-500">Peak rainfall</div>
-                    <div className="text-sm font-bold font-mono text-blue-900">
-                      {weatherSummary.peakRainStation ? `${weatherSummary.peakRainfall.toFixed(1)} mm` : "No hotspot"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </SectionShell>
-          )}
 
           <SectionShell
             title="Operational Insights"

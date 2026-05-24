@@ -15,13 +15,21 @@ function fallbackConfidence(insight: AIInsight) {
   return 74;
 }
 
-export default function AIInsightsList({ insights }: { insights: AIInsight[] }) {
+export default function AIInsightsList({
+  insights,
+  showHeader = true,
+}: {
+  insights: AIInsight[];
+  showHeader?: boolean;
+}) {
   return (
     <div>
-      <div className="mb-2 flex items-center gap-1.5">
-        <Brain size={11} className="text-slate-400" />
-        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Operational Insights</span>
-      </div>
+      {showHeader && (
+        <div className="mb-2 flex items-center gap-1.5">
+          <Brain size={11} className="text-slate-400" />
+          <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Operational Insights</span>
+        </div>
+      )}
 
       <div className="space-y-2">
         {insights.map((insight) => {

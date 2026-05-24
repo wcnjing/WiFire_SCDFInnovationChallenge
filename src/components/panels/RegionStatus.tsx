@@ -5,6 +5,7 @@ interface Props {
   regions: Region[];
   timeOffset: TimeOffset;
   weatherImpacts?: WeatherRegionImpact[];
+  showHeader?: boolean;
 }
 
 const weatherTone = {
@@ -21,12 +22,14 @@ function trendLabel(trend: Region["trend"]) {
   return { glyph: "STABLE", tone: "text-coverage-green" };
 }
 
-export default function RegionStatus({ regions, timeOffset, weatherImpacts = [] }: Props) {
+export default function RegionStatus({ regions, timeOffset, weatherImpacts = [], showHeader = true }: Props) {
   const impactMap = new Map(weatherImpacts.map((impact) => [impact.region, impact]));
 
   return (
     <div>
-      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Regional Status</div>
+      {showHeader && (
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Regional Status</div>
+      )}
       <div className="space-y-2">
         {regions.map((region) => {
           const impact = impactMap.get(region.name);

@@ -9,22 +9,29 @@ import SupportingIntelligenceDrawer from "@/components/panels/SupportingIntellig
 import type { SupportingIntelligenceTab } from "@/components/panels/SupportingIntelligenceTabs";
 import SingaporeMap from "@/components/map/SingaporeMap";
 import { MapLegend, TrafficCameraPreview } from "@/components/map/MapOverlays";
-import { useLTAIncidents, useLTASpeedBands, useLTATravelTimes } from "@/hooks/useLTAData";
+import { useLTAIncidents, useLTASpeedBands } from "@/hooks/useLTAData";
 import { useLTATrafficImages } from "@/hooks/useLTATrafficImages";
 import { useOneMapRoute } from "@/hooks/useOneMapRoute";
 import { useNEAWeather } from "@/hooks/useNEAWeather";
+import { useURABuildingContext } from "@/hooks/useURABuildingContext";
 import { calculateAvgResponseTime, calculateOverallHealth, getAdjustedResponseTime } from "@/lib/coverage";
 import { buildTrafficCameraFocusPoints, rankTrafficCameraSnapshots } from "@/lib/trafficCameras";
 import { buildWeatherOperationalModel } from "@/lib/weather";
 import {
   buildSimulatedLTAIncidents,
   buildSimulatedLTASpeedBands,
-  buildSimulatedLTATravelTimes,
   buildSimulatedNEAWeather,
 } from "@/lib/fallbackData";
 import { SCENARIO_CONFIGS } from "@/lib/scenarios";
 import type { RankedTrafficCameraSnapshot } from "@/lib/trafficCameras";
-import type { OneMapRouteMode, RecommendedAction, ScenarioPreset, SourceStatus } from "@/types";
+import type {
+  Incident,
+  OneMapRouteMode,
+  RecommendedAction,
+  ScenarioPreset,
+  SourceStatus,
+  UrbanBuildingSelectionOptions,
+} from "@/types";
 
 function formatUpdatedLabel(timestamp: number | null | undefined) {
   if (!timestamp) return undefined;
@@ -71,13 +78,10 @@ function getDatasetStatus(params: {
 function getLTAStatus(params: {
   incidentsLoading: boolean;
   speedBandsLoading: boolean;
-  travelTimesLoading: boolean;
   incidentsError: string | null;
   speedBandsError: string | null;
-  travelTimesError: string | null;
   incidentsFetchedAt: number | null;
   speedBandsFetchedAt: number | null;
-  travelTimesFetchedAt: number | null;
   fallbackFetchedAt: number | null;
   usingMock: boolean;
 }): SourceStatus {
@@ -85,12 +89,11 @@ function getLTAStatus(params: {
     return { label: "LTA", mode: "mock", updatedLabel: formatUpdatedLabel(params.fallbackFetchedAt) };
   }
 
-  const loading = params.incidentsLoading || params.speedBandsLoading || params.travelTimesLoading;
-  const error = params.incidentsError ?? params.speedBandsError ?? params.travelTimesError;
+  const loading = params.incidentsLoading || params.speedBandsLoading;
+  const error = params.incidentsError ?? params.speedBandsError;
   const fetchedAt = Math.max(
     params.incidentsFetchedAt ?? 0,
     params.speedBandsFetchedAt ?? 0,
-    params.travelTimesFetchedAt ?? 0,
   ) || null;
 
   if (fetchedAt) {
@@ -106,13 +109,15 @@ export default function HomePage() {
   const [focusedIncidentId, setFocusedIncidentId] = useState<number | null>(null);
   const [focusIncidentRequestKey, setFocusIncidentRequestKey] = useState(0);
   const [routeMode, setRouteMode] = useState<OneMapRouteMode>("drive");
-  const [scenario, setScenario] = useState<ScenarioPreset>("normal");
+  const scenario: ScenarioPreset = "normal";
   const [showMapLegend, setShowMapLegend] = useState(true);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<RankedTrafficCameraSnapshot | null>(null);
   const [supportingTab, setSupportingTab] = useState<SupportingIntelligenceTab>("route");
+  const [selectedUrbanBuildingId, setSelectedUrbanBuildingId] = useState<string | null>(null);
+  const [focusUrbanBuildingRequestKey, setFocusUrbanBuildingRequestKey] = useState(0);
+  const [openUrbanBuildingPopupRequestKey, setOpenUrbanBuildingPopupRequestKey] = useState(0);
   const { data: ltaIncidents, loading: ltaIncidentsLoading, error: ltaIncidentsError, fetchedAt: ltaIncidentsFetchedAt } = useLTAIncidents();
   const { data: ltaSpeedBands, loading: ltaSpeedBandsLoading, error: ltaSpeedBandsError, fetchedAt: ltaSpeedBandsFetchedAt } = useLTASpeedBands();
-  const { data: ltaTravelTimes, loading: ltaTravelTimesLoading, error: ltaTravelTimesError, fetchedAt: ltaTravelTimesFetchedAt } = useLTATravelTimes();
   const {
     cameras: trafficCameras,
     loading: trafficCameraLoading,
@@ -125,14 +130,12 @@ export default function HomePage() {
   const simulatedNEAWeather = useMemo(() => buildSimulatedNEAWeather(), []);
   const simulatedLTAIncidents = useMemo(() => buildSimulatedLTAIncidents(), []);
   const simulatedLTASpeedBands = useMemo(() => buildSimulatedLTASpeedBands(), []);
-  const simulatedLTATravelTimes = useMemo(() => buildSimulatedLTATravelTimes(), []);
   const fallbackSnapshotAt = simulatedNEAWeather.fetchedAt;
 
   const usingFallbackNEA = !neaWeather && !neaWeatherLoading && Boolean(neaWeatherError);
   const usingFallbackLTAIncidents = ltaIncidents.length === 0 && Boolean(ltaIncidentsError);
   const usingFallbackLTASpeedBands = ltaSpeedBands.length === 0 && Boolean(ltaSpeedBandsError);
-  const usingFallbackLTATravelTimes = ltaTravelTimes.length === 0 && Boolean(ltaTravelTimesError);
-  const usingFallbackLTA = usingFallbackLTAIncidents || usingFallbackLTASpeedBands || usingFallbackLTATravelTimes;
+  const usingFallbackLTA = usingFallbackLTAIncidents || usingFallbackLTASpeedBands;
 
   const activeLTAIncidents = useMemo(
     () => (usingFallbackLTAIncidents ? simulatedLTAIncidents : ltaIncidents),
@@ -141,10 +144,6 @@ export default function HomePage() {
   const activeLTASpeedBands = useMemo(
     () => (usingFallbackLTASpeedBands ? simulatedLTASpeedBands : ltaSpeedBands),
     [ltaSpeedBands, simulatedLTASpeedBands, usingFallbackLTASpeedBands],
-  );
-  const activeLTATravelTimes = useMemo(
-    () => (usingFallbackLTATravelTimes ? simulatedLTATravelTimes : ltaTravelTimes),
-    [ltaTravelTimes, simulatedLTATravelTimes, usingFallbackLTATravelTimes],
   );
   const activeNEAWeather = useMemo(
     () => (usingFallbackNEA ? simulatedNEAWeather : neaWeather),
@@ -182,6 +181,18 @@ export default function HomePage() {
     () => routeIncidents.find((incident) => incident.id === routeIncidentId) ?? routeIncidents[0] ?? null,
     [routeIncidents, routeIncidentId],
   );
+  const {
+    buildings: urbanContextBuildings,
+    loading: urbanContextLoading,
+    error: urbanContextError,
+    isFallback: urbanContextFallback,
+    source: urbanContextSource,
+    refetch: refetchUrbanContext,
+  } = useURABuildingContext(
+    selectedRouteIncident?.lat ?? null,
+    selectedRouteIncident?.lng ?? null,
+    360,
+  );
   const trafficCameraFocusPoints = useMemo(
     () => buildTrafficCameraFocusPoints(state.selectedStation, routeIncidents, selectedRouteIncident?.id ?? routeIncidentId),
     [routeIncidentId, routeIncidents, selectedRouteIncident?.id, state.selectedStation],
@@ -189,6 +200,10 @@ export default function HomePage() {
   const mapTrafficCameras = useMemo(
     () => rankTrafficCameraSnapshots(trafficCameras, trafficCameraFocusPoints, 6),
     [trafficCameras, trafficCameraFocusPoints],
+  );
+  const selectedUrbanBuilding = useMemo(
+    () => urbanContextBuildings.find((building) => building.id === selectedUrbanBuildingId) ?? null,
+    [selectedUrbanBuildingId, urbanContextBuildings],
   );
 
   const scenarioConfig = SCENARIO_CONFIGS[scenario];
@@ -216,26 +231,37 @@ export default function HomePage() {
     }
   }, [routeIncidentId, routeIncidents]);
 
+  useEffect(() => {
+    setSelectedUrbanBuildingId(null);
+    setFocusUrbanBuildingRequestKey(0);
+    setOpenUrbanBuildingPopupRequestKey(0);
+  }, [selectedRouteIncident?.id]);
+
   const focusIncidentOnMap = useCallback((incident: (typeof routeIncidents)[number]) => {
     setRouteIncidentId(incident.id);
     setFocusedIncidentId(incident.id);
     setFocusIncidentRequestKey((current) => current + 1);
   }, []);
 
-  const applyScenario = useCallback((nextScenario: ScenarioPreset) => {
-    const config = SCENARIO_CONFIGS[nextScenario];
-    setScenario(nextScenario);
-    actions.setTimeOffset(config.timeOffset);
-    if (state.showTraffic !== config.showTraffic) actions.toggleTraffic();
-    if (state.showWeather !== config.showWeather) actions.toggleWeather();
-    if (state.showIncidents !== config.showIncidents) actions.toggleIncidents();
-    actions.setIncidentType(config.incidentType);
-  }, [actions, state.showIncidents, state.showTraffic, state.showWeather]);
+  const selectUrbanBuilding = useCallback((buildingId: string, options?: UrbanBuildingSelectionOptions) => {
+    setSelectedUrbanBuildingId(buildingId);
+    if (options?.focusMap) {
+      setFocusUrbanBuildingRequestKey((current) => current + 1);
+    }
+    if (options?.openPopup) {
+      setOpenUrbanBuildingPopupRequestKey((current) => current + 1);
+    }
+  }, []);
 
   const openSupportingDrawer = useCallback((tab: SupportingIntelligenceTab) => {
     setSupportingTab(tab);
     actions.setRightPanelOpen(true);
   }, [actions]);
+
+  const openIncidentUrbanContext = useCallback((incident: Incident) => {
+    focusIncidentOnMap(incident);
+    openSupportingDrawer("environment");
+  }, [focusIncidentOnMap, openSupportingDrawer]);
 
   const closeSupportingDrawer = useCallback(() => {
     actions.setRightPanelOpen(false);
@@ -252,13 +278,10 @@ export default function HomePage() {
   const ltaStatus = getLTAStatus({
     incidentsLoading: ltaIncidentsLoading,
     speedBandsLoading: ltaSpeedBandsLoading,
-    travelTimesLoading: ltaTravelTimesLoading,
     incidentsError: ltaIncidentsError,
     speedBandsError: ltaSpeedBandsError,
-    travelTimesError: ltaTravelTimesError,
     incidentsFetchedAt: ltaIncidentsFetchedAt,
     speedBandsFetchedAt: ltaSpeedBandsFetchedAt,
-    travelTimesFetchedAt: ltaTravelTimesFetchedAt,
     fallbackFetchedAt: fallbackSnapshotAt,
     usingMock: usingFallbackLTA,
   });
@@ -374,13 +397,6 @@ export default function HomePage() {
 
   const sourceStatuses: SourceStatus[] = [ltaStatus, neaStatus];
 
-  const openRecommendationEvidence = useCallback(() => {
-    if (recommendedAction && state.selectedStation?.id !== recommendedAction.station.id) {
-      actions.selectStation(recommendedAction.station);
-    }
-    openSupportingDrawer("route");
-  }, [actions, openSupportingDrawer, recommendedAction, state.selectedStation?.id]);
-
   useEffect(() => {
     if (mapTrafficCameras.length === 0) {
       setSelectedTrafficCamera(null);
@@ -396,7 +412,7 @@ export default function HomePage() {
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <TopBar activeView={state.activeView} onViewChange={actions.setView} sourceStatuses={sourceStatuses} />
-      <div className="relative flex flex-1 flex-col overflow-hidden lg:flex-row">
+      <div className="relative flex flex-1 flex-row overflow-x-auto overflow-y-hidden">
         <CommandSummaryPanel
           activeView={state.activeView}
           selectedIncident={selectedRouteIncident}
@@ -408,22 +424,14 @@ export default function HomePage() {
           stationWeatherImpact={focusStationWeatherImpact}
           overallHealth={overallHealth}
           avgResponseTime={avgResponseTime}
-          ltaStatus={ltaStatus}
-          ltaTravelTimes={activeLTATravelTimes}
-          oneMapRoute={oneMapRoute}
-          routeMode={routeMode}
-          timeOffset={state.timeOffset}
           insights={headlineInsights}
-          weatherSummary={weatherModel.summary}
-          onTimeChange={actions.setTimeOffset}
           onFocusStation={actions.selectStation}
           onFocusIncident={focusIncidentOnMap}
           onIncidentTypeChange={actions.setIncidentType}
-          onOpenRecommendationEvidence={openRecommendationEvidence}
           onOpenSupportingTab={openSupportingDrawer}
         />
 
-        <div className="relative min-h-[40vh] flex-1 overflow-hidden bg-surface-50 md:min-h-[48vh] lg:min-h-0">
+        <div className="relative min-w-[420px] flex-1 overflow-hidden bg-surface-50">
           <div className="h-full w-full">
             <SingaporeMap
               stations={FIRE_STATIONS}
@@ -446,6 +454,14 @@ export default function HomePage() {
               oneMapRouteTarget={selectedRouteIncident}
               trafficCameraSnapshots={mapTrafficCameras}
               onTrafficCameraClick={setSelectedTrafficCamera}
+              urbanContextIncident={selectedRouteIncident}
+              urbanContextBuildings={urbanContextBuildings}
+              selectedUrbanBuildingId={selectedUrbanBuilding?.id ?? null}
+              focusUrbanBuildingRequestKey={focusUrbanBuildingRequestKey}
+              openUrbanBuildingPopupRequestKey={openUrbanBuildingPopupRequestKey}
+              onUrbanBuildingClick={selectUrbanBuilding}
+              onIncidentClick={focusIncidentOnMap}
+              onIncidentShow3D={openIncidentUrbanContext}
             />
           </div>
 
@@ -487,13 +503,11 @@ export default function HomePage() {
           )}
         </div>
 
-        <div className="hidden xl:block">
-          <PanelToggle
-            side="right"
-            isOpen={state.rightPanelOpen}
-            onClick={() => (state.rightPanelOpen ? closeSupportingDrawer() : openSupportingDrawer("route"))}
-          />
-        </div>
+        <PanelToggle
+          side="right"
+          isOpen={state.rightPanelOpen}
+          onClick={() => (state.rightPanelOpen ? closeSupportingDrawer() : openSupportingDrawer("route"))}
+        />
 
         <SupportingIntelligenceDrawer
           state={state}
@@ -504,14 +518,10 @@ export default function HomePage() {
           timeOffset={state.timeOffset}
           incidents={routeIncidents}
           insights={combinedInsights}
-          overallHealth={overallHealth}
-          avgResponseTime={avgResponseTime}
           recommendedAction={recommendedAction}
           scenario={scenario}
-          ltaStatus={ltaStatus}
           neaStatus={neaStatus}
           onFocusStation={actions.selectStation}
-          onScenarioChange={applyScenario}
           onTabChange={setSupportingTab}
           onClose={closeSupportingDrawer}
           onToggleTraffic={actions.toggleTraffic}
@@ -527,15 +537,19 @@ export default function HomePage() {
           oneMapRouteLoading={oneMapRouteLoading}
           oneMapRouteError={oneMapRouteError}
           oneMapRouteFetchedAt={oneMapRouteFetchedAt}
-          ltaTravelTimes={activeLTATravelTimes}
-          ltaTravelTimesLoading={ltaTravelTimesLoading}
-          ltaTravelTimesError={ltaTravelTimesError}
-          ltaTravelTimesFetchedAt={usingFallbackLTATravelTimes ? fallbackSnapshotAt : ltaTravelTimesFetchedAt}
           trafficCameras={trafficCameras}
           trafficCameraLoading={trafficCameraLoading}
           trafficCameraError={trafficCameraError}
           trafficCameraLastUpdated={trafficCameraLastUpdated}
           onRefreshTrafficCameras={refetchTrafficCameras}
+          urbanContextBuildings={urbanContextBuildings}
+          urbanContextLoading={urbanContextLoading}
+          urbanContextError={urbanContextError}
+          urbanContextIsFallback={urbanContextFallback}
+          urbanContextSource={urbanContextSource}
+          selectedUrbanBuildingId={selectedUrbanBuilding?.id ?? null}
+          onSelectUrbanBuilding={selectUrbanBuilding}
+          onRefreshUrbanContext={refetchUrbanContext}
         />
       </div>
     </div>

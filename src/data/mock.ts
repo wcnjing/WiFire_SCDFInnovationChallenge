@@ -20,7 +20,7 @@ export const FIRE_STATIONS: FireStation[] = [
 ];
 
 export const INCIDENTS: Incident[] = [
-  { id: 1, type: "fire", lat: 1.3521, lng: 103.8198, severity: "high", status: "active", desc: "Structure Fire - Orchard Rd", timestamp: "14:32" },
+  { id: 1, type: "fire", lat: 1.3048, lng: 103.8318, severity: "high", status: "active", desc: "Structure Fire - Orchard Rd", timestamp: "14:32" },
   { id: 2, type: "medical", lat: 1.3, lng: 103.86, severity: "medium", status: "active", desc: "Cardiac Arrest - Marine Parade", timestamp: "14:28" },
   { id: 3, type: "medical", lat: 1.42, lng: 103.835, severity: "low", status: "responding", desc: "Fall Injury - Yishun", timestamp: "14:15" },
   { id: 4, type: "fire", lat: 1.335, lng: 103.71, severity: "medium", status: "responding", desc: "Vehicle Fire - Jurong East", timestamp: "14:10" },

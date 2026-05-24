@@ -1,13 +1,14 @@
 "use client";
 import { useEffect, useRef } from "react";
 import type { CircleMarkerOptions, LayerGroup, Map as LeafletMap, PathOptions } from "leaflet";
-import type { FireStation, Incident, LatLng, TimeOffset, ViewMode } from "@/types";
+import type { FireStation, Incident, LatLng, TimeOffset, UrbanBuildingContext, UrbanBuildingSelectionOptions, ViewMode } from "@/types";
 import { VOLUNTEER_ZONES } from "@/data/mock";
 import { getCoverageColors, getAdjustedResponseTime } from "@/lib/coverage";
 import type { RankedTrafficCameraSnapshot } from "@/lib/trafficCameras";
 import type { LTAIncident, LTASpeedBand } from "@/hooks/useLTAData";
 import type { NEAForecast, NEAStation } from "@/hooks/useNEAWeather";
 import { forecastSeverity } from "@/hooks/useNEAWeather";
+import { getUrbanBuildingAddressLine, getUrbanBuildingDisplayLabel, getUrbanBuildingMapLabel } from "@/lib/urbanContext";
 
 interface Props {
   stations: FireStation[];
@@ -30,6 +31,14 @@ interface Props {
   oneMapRouteTarget?: Incident | null;
   trafficCameraSnapshots?: RankedTrafficCameraSnapshot[];
   onTrafficCameraClick?: (camera: RankedTrafficCameraSnapshot) => void;
+  urbanContextIncident?: Incident | null;
+  urbanContextBuildings?: UrbanBuildingContext[];
+  selectedUrbanBuildingId?: string | null;
+  focusUrbanBuildingRequestKey?: number;
+  openUrbanBuildingPopupRequestKey?: number;
+  onUrbanBuildingClick?: (buildingId: string, options?: UrbanBuildingSelectionOptions) => void;
+  onIncidentClick?: (incident: Incident) => void;
+  onIncidentShow3D?: (incident: Incident) => void;
 }
 
 interface LayerGroups {
@@ -41,6 +50,8 @@ interface LayerGroups {
   trafficCameras: LayerGroup;
   weather: LayerGroup;
   route: LayerGroup;
+  urbanBuildings: LayerGroup;
+  urbanLabels: LayerGroup;
   stations: LayerGroup;
 }
 
@@ -87,6 +98,37 @@ function stationPopupContent(station: FireStation, timeOffset: TimeOffset, weath
 
 function incidentColor(incident: Incident) {
   return incident.type === "fire" ? "#ef4444" : "#f59e0b";
+}
+
+function incidentPopupContent(incident: Incident) {
+  return `
+    <div style="width:240px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;">
+        Incident
+      </div>
+      <div style="margin-top:6px;font-size:15px;font-weight:700;color:#0f172a;">
+        ${escapeHtml(incident.desc)}
+      </div>
+      <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">
+        <span style="border:1px solid #fecaca;background:#fef2f2;color:#b91c1c;padding:3px 8px;border-radius:9999px;font-size:10px;font-weight:700;text-transform:uppercase;">
+          ${escapeHtml(incident.type)}
+        </span>
+        <span style="border:1px solid #e2e8f0;background:#ffffff;color:#475569;padding:3px 8px;border-radius:9999px;font-size:10px;font-weight:700;text-transform:uppercase;">
+          ${escapeHtml(incident.severity)}
+        </span>
+        <span style="border:1px solid #e2e8f0;background:#ffffff;color:#475569;padding:3px 8px;border-radius:9999px;font-size:10px;font-weight:700;text-transform:uppercase;">
+          ${escapeHtml(incident.status)}
+        </span>
+      </div>
+      <button
+        type="button"
+        data-incident-urban-context="${incident.id}"
+        style="margin-top:10px;width:100%;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:9999px;padding:8px 12px;font-size:11px;font-weight:700;cursor:pointer;"
+      >
+        Show 3D building context
+      </button>
+    </div>
+  `;
 }
 
 function forecastFill(forecast: string) {
@@ -153,6 +195,51 @@ function trafficCameraPopupContent(camera: RankedTrafficCameraSnapshot) {
   `;
 }
 
+function urbanBuildingLabelHtml(building: UrbanBuildingContext, isSelected: boolean) {
+  const border = building.isLikelyIncidentBuilding ? "#f43f5e" : isSelected ? "#f59e0b" : "#1d4ed8";
+  const background = building.isLikelyIncidentBuilding ? "rgba(255,228,230,0.95)" : isSelected ? "rgba(255,247,237,0.97)" : "rgba(255,255,255,0.97)";
+  const text = building.isLikelyIncidentBuilding ? "#9f1239" : isSelected ? "#9a3412" : "#1e3a8a";
+
+  return `
+    <div style="white-space:nowrap;border:1px solid ${border};background:${background};color:${text};border-radius:9999px;padding:4px 8px;font-size:10px;font-weight:700;box-shadow:0 8px 18px rgba(15,23,42,0.16);">
+      ${escapeHtml(getUrbanBuildingMapLabel(building))}
+    </div>
+  `;
+}
+
+function urbanBuildingPopupContent(building: UrbanBuildingContext) {
+  const address = getUrbanBuildingAddressLine(building);
+
+  return `
+    <div style="width:238px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;">
+        Building context
+      </div>
+      <div style="margin-top:6px;font-size:15px;font-weight:700;color:#0f172a;">
+        ${escapeHtml(getUrbanBuildingDisplayLabel(building))}
+      </div>
+      <div style="margin-top:6px;font-size:12px;line-height:1.5;color:#475569;">
+        ${address ? escapeHtml(address) : "Address unavailable"}
+      </div>
+      <div style="margin-top:10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
+        <div style="border:1px solid #e2e8f0;border-radius:14px;padding:8px;background:#f8fafc;">
+          <div style="font-size:10px;text-transform:uppercase;color:#94a3b8;">Height</div>
+          <div style="margin-top:2px;font-size:12px;font-weight:700;color:#0f172a;">${building.estimatedHeight} m</div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:14px;padding:8px;background:#f8fafc;">
+          <div style="font-size:10px;text-transform:uppercase;color:#94a3b8;">Distance</div>
+          <div style="margin-top:2px;font-size:12px;font-weight:700;color:#0f172a;">${building.distanceFromIncidentMeters.toFixed(0)} m</div>
+        </div>
+      </div>
+      ${building.isLikelyIncidentBuilding ? `
+        <div style="margin-top:10px;border:1px solid #fecaca;background:#fef2f2;color:#b91c1c;border-radius:14px;padding:8px 10px;font-size:11px;font-weight:700;">
+          Likely incident building
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
 function trafficCameraMarkerHtml(tone: RankedTrafficCameraSnapshot["tone"]) {
   const border = tone === "station" ? "#2563eb" : "#f59e0b";
   const shadow = tone === "station" ? "rgba(37, 99, 235, 0.24)" : "rgba(245, 158, 11, 0.24)";
@@ -188,12 +275,21 @@ export default function SingaporeMap({
   oneMapRouteTarget = null,
   trafficCameraSnapshots = [],
   onTrafficCameraClick,
+  urbanContextIncident = null,
+  urbanContextBuildings = [],
+  selectedUrbanBuildingId = null,
+  focusUrbanBuildingRequestKey = 0,
+  openUrbanBuildingPopupRequestKey = 0,
+  onUrbanBuildingClick,
+  onIncidentClick,
+  onIncidentShow3D,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const leafletRef = useRef<LeafletModule | null>(null);
   const layerGroupsRef = useRef<LayerGroups | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const lastUrbanBuildingPopupRequestKeyRef = useRef(0);
 
   useEffect(() => {
     let disposed = false;
@@ -233,6 +329,8 @@ export default function SingaporeMap({
       map.createPane("coverage");
       map.createPane("weather");
       map.createPane("route");
+      map.createPane("urbanBuildings");
+      map.createPane("urbanLabels");
       map.createPane("stations");
 
       const trafficPane = map.getPane("traffic");
@@ -240,6 +338,8 @@ export default function SingaporeMap({
       const coveragePane = map.getPane("coverage");
       const weatherPane = map.getPane("weather");
       const routePane = map.getPane("route");
+      const urbanBuildingsPane = map.getPane("urbanBuildings");
+      const urbanLabelsPane = map.getPane("urbanLabels");
       const stationsPane = map.getPane("stations");
 
       if (trafficPane) trafficPane.style.zIndex = "360";
@@ -247,6 +347,8 @@ export default function SingaporeMap({
       if (coveragePane) coveragePane.style.zIndex = "380";
       if (weatherPane) weatherPane.style.zIndex = "390";
       if (routePane) routePane.style.zIndex = "410";
+      if (urbanBuildingsPane) urbanBuildingsPane.style.zIndex = "405";
+      if (urbanLabelsPane) urbanLabelsPane.style.zIndex = "426";
       if (stationsPane) stationsPane.style.zIndex = "430";
 
       layerGroupsRef.current = {
@@ -258,6 +360,8 @@ export default function SingaporeMap({
         trafficCameras: L.layerGroup().addTo(map),
         weather: L.layerGroup().addTo(map),
         route: L.layerGroup().addTo(map),
+        urbanBuildings: L.layerGroup().addTo(map),
+        urbanLabels: L.layerGroup().addTo(map),
         stations: L.layerGroup().addTo(map),
       };
 
@@ -290,6 +394,7 @@ export default function SingaporeMap({
     const L = leafletRef.current;
     const layers = layerGroupsRef.current;
     if (!map || !L || !layers) return;
+    const shouldOpenSelectedBuildingPopup = openUrbanBuildingPopupRequestKey > lastUrbanBuildingPopupRequestKeyRef.current;
 
     Object.values(layers).forEach((layer) => layer.clearLayers());
 
@@ -378,6 +483,51 @@ export default function SingaporeMap({
             .bindPopup(`${station.name}: ${station.rainfall.toFixed(1)} mm rainfall`)
             .addTo(layers.weather);
         });
+    }
+
+    if (urbanContextIncident && urbanContextBuildings.length > 0) {
+      urbanContextBuildings.forEach((building) => {
+        const latLngs = building.coordinates.map(([lng, lat]) => [lat, lng] as [number, number]);
+        const isSelectedBuilding = selectedUrbanBuildingId === building.id;
+        const fillColor = building.isLikelyIncidentBuilding ? "#fb7185" : isSelectedBuilding ? "#fbbf24" : "#38bdf8";
+        const strokeColor = building.isLikelyIncidentBuilding ? "#be123c" : isSelectedBuilding ? "#d97706" : "#0f766e";
+
+        const polygon = L.polygon(latLngs, {
+          color: strokeColor,
+          fillColor,
+          fillOpacity: building.isLikelyIncidentBuilding ? 0.32 : isSelectedBuilding ? 0.28 : 0.18,
+          weight: isSelectedBuilding ? 3 : building.isLikelyIncidentBuilding ? 2.4 : 1.4,
+          pane: "urbanBuildings",
+        })
+          .bindPopup(urbanBuildingPopupContent(building), {
+            maxWidth: 250,
+            className: "urban-building-popup",
+          })
+          .on("click", () => {
+            onUrbanBuildingClick?.(building.id, { openPopup: true });
+          })
+          .addTo(layers.urbanBuildings);
+
+        L.marker([building.centroid.lat, building.centroid.lng], {
+          pane: "urbanLabels",
+          interactive: false,
+          keyboard: false,
+          icon: L.divIcon({
+            className: "urban-building-map-label",
+            html: urbanBuildingLabelHtml(building, isSelectedBuilding),
+            iconSize: [84, 24],
+            iconAnchor: [42, 12],
+          }),
+        }).addTo(layers.urbanLabels);
+
+        if (shouldOpenSelectedBuildingPopup && isSelectedBuilding) {
+          polygon.openPopup();
+        }
+      });
+
+      if (shouldOpenSelectedBuildingPopup) {
+        lastUrbanBuildingPopupRequestKeyRef.current = openUrbanBuildingPopupRequestKey;
+      }
     }
 
     stations.forEach((station) => {
@@ -495,11 +645,29 @@ export default function SingaporeMap({
                   : 6,
             color: "#ffffff",
             fillColor: incidentColor(incident),
-            weight: isFocusedIncident ? 2.5 : 1.5,
-            pane: "stations",
-          }),
+              weight: isFocusedIncident ? 2.5 : 1.5,
+              pane: "stations",
+            }),
         )
-          .bindPopup(`${incident.desc}<br/>${incident.severity.toUpperCase()} | ${incident.status}`)
+          .bindPopup(incidentPopupContent(incident), {
+            maxWidth: 250,
+            className: "incident-popup",
+          })
+          .on("click", () => {
+            onIncidentClick?.(incident);
+            marker.openPopup();
+          })
+          .on("popupopen", (event) => {
+            const popupElement = event.popup.getElement();
+            const button = popupElement?.querySelector<HTMLButtonElement>(`[data-incident-urban-context="${incident.id}"]`);
+            if (!button) return;
+
+            button.onclick = (popupEvent) => {
+              popupEvent.preventDefault();
+              popupEvent.stopPropagation();
+              onIncidentShow3D?.(incident);
+            };
+          })
           .addTo(layers.incidents);
 
         if (isFocusedIncident) {
@@ -597,9 +765,14 @@ export default function SingaporeMap({
     neaForecasts,
     neaStations,
     onStationClick,
+    onUrbanBuildingClick,
+    onIncidentClick,
+    onIncidentShow3D,
     oneMapRoutePath,
     oneMapRouteTarget,
+    openUrbanBuildingPopupRequestKey,
     selectedStation,
+    selectedUrbanBuildingId,
     showIncidents,
     showTraffic,
     showWeather,
@@ -607,6 +780,8 @@ export default function SingaporeMap({
     stations,
     timeOffset,
     trafficCameraSnapshots,
+    urbanContextBuildings,
+    urbanContextIncident,
     onTrafficCameraClick,
   ]);
 
@@ -615,9 +790,17 @@ export default function SingaporeMap({
     const L = leafletRef.current;
     if (!map || !L) return;
 
+    const focusedBuilding = selectedUrbanBuildingId
+      ? urbanContextBuildings.find((building) => building.id === selectedUrbanBuildingId) ?? null
+      : null;
     const focusedIncident = focusedIncidentId
       ? incidents.find((incident) => incident.id === focusedIncidentId) ?? null
       : null;
+
+    if (focusedBuilding && focusUrbanBuildingRequestKey > 0) {
+      map.flyTo([focusedBuilding.centroid.lat, focusedBuilding.centroid.lng], Math.max(map.getZoom(), 17), { duration: 0.7 });
+      return;
+    }
 
     if (focusedIncident && focusIncidentRequestKey > 0) {
       map.flyTo([focusedIncident.lat, focusedIncident.lng], Math.max(map.getZoom(), 15), { duration: 0.7 });
@@ -635,7 +818,16 @@ export default function SingaporeMap({
     if (selectedStation) {
       map.flyTo([selectedStation.lat, selectedStation.lng], Math.max(map.getZoom(), 14), { duration: 0.6 });
     }
-  }, [focusIncidentRequestKey, focusedIncidentId, incidents, oneMapRoutePath, selectedStation]);
+  }, [
+    focusIncidentRequestKey,
+    focusUrbanBuildingRequestKey,
+    focusedIncidentId,
+    incidents,
+    oneMapRoutePath,
+    selectedStation,
+    selectedUrbanBuildingId,
+    urbanContextBuildings,
+  ]);
 
   return <div ref={containerRef} className="onemap-map w-full h-full" aria-label="OneMap operational map" />;
 }

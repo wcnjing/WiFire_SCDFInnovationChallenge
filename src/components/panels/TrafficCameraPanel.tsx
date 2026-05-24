@@ -115,13 +115,6 @@ export default function TrafficCameraPanel({
         </button>
       </div>
 
-      {focusPoints.length > 0 && (
-        <div className="mt-3 rounded-xl border border-surface-100 bg-white px-3 py-2 text-[11px] text-slate-600">
-          Prioritising cameras nearest to {focusPoints[0].label.toLowerCase()}
-          {focusPoints.length > 1 ? " and active incident corridors." : "."}
-        </div>
-      )}
-
       {loading && visibleCameras.length === 0 && (
         <div className="mt-3 flex items-center gap-2 rounded-xl border border-surface-100 bg-surface-50 px-3 py-3 text-[11px] text-slate-500">
           <LoaderCircle size={13} className="animate-spin text-slate-400" />

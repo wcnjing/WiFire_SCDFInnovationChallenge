@@ -119,12 +119,22 @@ export type TrafficCameraSnapshot = {
   imageLink: string;
 };
 
+export interface UrbanBuildingSelectionOptions {
+  focusMap?: boolean;
+  openPopup?: boolean;
+}
+
 export type UrbanBuildingContext = {
   id: string;
   name?: string | null;
+  blockNumber?: string | null;
+  roadName?: string | null;
+  postalCode?: string | null;
+  fullAddress?: string | null;
   buildingType?: "Residential" | "Commercial" | "Industrial" | "Mixed Use" | "Unknown" | string | null;
   heightCategory: "Low" | "Medium" | "High" | "Unknown";
   estimatedHeight: number;
+  centroid: LatLng;
   coordinates: [number, number][];
   distanceFromIncidentMeters: number;
   isLikelyIncidentBuilding: boolean;

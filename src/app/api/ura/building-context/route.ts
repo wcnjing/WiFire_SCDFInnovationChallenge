@@ -4,8 +4,10 @@ import type { URABuildingContextResponse, UrbanBuildingContext } from "@/types";
 
 const BUILDING_DATASET_ID = "d_e8e3249d4433845bdd8034ae44329d9e";
 const POLL_DOWNLOAD_URL = `https://api-open.data.gov.sg/v1/public/api/datasets/${BUILDING_DATASET_ID}/poll-download`;
+const ONEMAP_REVERSE_GEOCODE_URL = "https://www.onemap.gov.sg/api/public/revgeocode";
 const SOURCE_LABEL = "URA via data.gov.sg";
 const GEOJSON_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const ADDRESS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 type RawRecord = Record<string, unknown>;
 
@@ -37,7 +39,27 @@ interface GeoJsonCache {
   expiresAt: number;
 }
 
+interface ReverseGeocodePayload {
+  GeocodeInfo?: Array<{
+    BUILDINGNAME?: string;
+    BLOCK?: string;
+    ROAD?: string;
+    POSTALCODE?: string;
+    LATITUDE?: string;
+    LONGITUDE?: string;
+  }>;
+}
+
+interface NormalizedAddress {
+  name: string | null;
+  blockNumber: string | null;
+  roadName: string | null;
+  postalCode: string | null;
+  fullAddress: string | null;
+}
+
 let geoJsonCache: GeoJsonCache | null = null;
+const addressCache = new Map<string, { address: NormalizedAddress | null; expiresAt: number }>();
 
 function distanceMeters(aLat: number, aLng: number, bLat: number, bLng: number) {
   const deltaLat = (aLat - bLat) * 111_320;
@@ -49,6 +71,19 @@ function parseLatLng(value: string | null) {
   if (value == null) return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function normalizeAddressField(value: string | null | undefined) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const lowered = trimmed.toLowerCase();
+  if (lowered === "nil" || lowered === "null" || lowered === "na" || lowered === "n/a") {
+    return null;
+  }
+
+  return trimmed;
 }
 
 function heightProfileFromArea(area: number | null, identifierSeed: number) {
@@ -109,6 +144,17 @@ function centroid(coordinates: [number, number][]) {
     }),
     { lng: 0, lat: 0 },
   );
+}
+
+function buildFullAddress(address: Omit<NormalizedAddress, "fullAddress">) {
+  const firstLine = [address.blockNumber ? `Blk ${address.blockNumber}` : null, address.roadName]
+    .filter(Boolean)
+    .join(" ");
+
+  if (firstLine && address.postalCode) return `${firstLine}, Singapore ${address.postalCode}`;
+  if (firstLine) return firstLine;
+  if (address.postalCode) return `Singapore ${address.postalCode}`;
+  return null;
 }
 
 function buildResponse(
@@ -178,7 +224,59 @@ async function fetchDatasetFeatures() {
   return features;
 }
 
-function findNearbyBuildings(features: GeoJsonFeature[], incidentLat: number, incidentLng: number, radius: number) {
+async function reverseGeocodeBuilding(lat: number, lng: number, buffer: number) {
+  const token = process.env.ONEMAP_API_TOKEN ?? process.env.ONEMAP_TOKEN;
+  if (!token) return null;
+
+  const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)},${buffer}`;
+  const now = Date.now();
+  const cached = addressCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.address;
+  }
+
+  const url = new URL(ONEMAP_REVERSE_GEOCODE_URL);
+  url.searchParams.set("location", `${lat.toFixed(6)},${lng.toFixed(6)}`);
+  url.searchParams.set("buffer", String(Math.max(10, Math.min(Math.round(buffer), 120))));
+  url.searchParams.set("addressType", "All");
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: token,
+        accept: "application/json",
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = await response.json() as ReverseGeocodePayload;
+    const nearest = Array.isArray(payload.GeocodeInfo) ? payload.GeocodeInfo[0] : null;
+    if (!nearest) {
+      addressCache.set(cacheKey, { address: null, expiresAt: now + ADDRESS_CACHE_TTL_MS });
+      return null;
+    }
+
+    const address: NormalizedAddress = {
+      name: normalizeAddressField(nearest.BUILDINGNAME),
+      blockNumber: normalizeAddressField(nearest.BLOCK),
+      roadName: normalizeAddressField(nearest.ROAD),
+      postalCode: normalizeAddressField(nearest.POSTALCODE),
+      fullAddress: null,
+    };
+
+    address.fullAddress = buildFullAddress(address);
+    addressCache.set(cacheKey, { address, expiresAt: now + ADDRESS_CACHE_TTL_MS });
+    return address;
+  } catch {
+    return null;
+  }
+}
+
+async function findNearbyBuildings(features: GeoJsonFeature[], incidentLat: number, incidentLng: number, radius: number) {
   const nearby: UrbanBuildingContext[] = [];
 
   for (const feature of features) {
@@ -201,9 +299,14 @@ function findNearbyBuildings(features: GeoJsonFeature[], incidentLat: number, in
     nearby.push({
       id: String(properties.OBJECTID ?? properties.objectid ?? `building-${nearby.length + 1}`),
       name: null,
+      blockNumber: null,
+      roadName: null,
+      postalCode: null,
+      fullAddress: null,
       buildingType: "Unknown",
       heightCategory,
       estimatedHeight,
+      centroid: { lat: center.lat, lng: center.lng },
       coordinates,
       distanceFromIncidentMeters,
       isLikelyIncidentBuilding: false,
@@ -216,7 +319,27 @@ function findNearbyBuildings(features: GeoJsonFeature[], incidentLat: number, in
     nearby[0].isLikelyIncidentBuilding = true;
   }
 
-  return nearby.slice(0, 12);
+  const shortlisted = nearby.slice(0, 12);
+  const enriched = await Promise.all(shortlisted.map(async (building) => {
+    const address = await reverseGeocodeBuilding(
+      building.centroid.lat,
+      building.centroid.lng,
+      Math.min(Math.max(Math.round(building.distanceFromIncidentMeters / 2), 20), 80),
+    );
+
+    if (!address) return building;
+
+    return {
+      ...building,
+      name: address.name ?? building.name,
+      blockNumber: address.blockNumber,
+      roadName: address.roadName,
+      postalCode: address.postalCode,
+      fullAddress: address.fullAddress,
+    } satisfies UrbanBuildingContext;
+  }));
+
+  return enriched;
 }
 
 export async function GET(request: NextRequest) {
@@ -233,7 +356,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const features = await fetchDatasetFeatures();
-    const buildings = findNearbyBuildings(features, lat, lng, radius);
+    const buildings = await findNearbyBuildings(features, lat, lng, radius);
 
     if (buildings.length === 0) {
       return NextResponse.json(buildResponse(lat, lng, radius, fallbackBuildings, true));
