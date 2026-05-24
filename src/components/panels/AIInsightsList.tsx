@@ -20,7 +20,7 @@ export default function AIInsightsList({ insights }: { insights: AIInsight[] }) 
     <div>
       <div className="mb-2 flex items-center gap-1.5">
         <Brain size={11} className="text-slate-400" />
-        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">AI Insights</span>
+        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Operational Insights</span>
       </div>
 
       <div className="space-y-2">
@@ -68,7 +68,7 @@ export default function AIInsightsList({ insights }: { insights: AIInsight[] }) 
 
         {insights.length === 0 && (
           <div className="rounded-2xl border border-surface-200 bg-white px-3 py-4 text-[11px] text-slate-500 shadow-sm">
-            No AI insights are available yet. Forecast cards will appear as soon as the prediction model produces a scenario.
+            No operational insights are available yet. Prototype forecast cards will appear as soon as the scenario engine produces an update.
           </div>
         )}
       </div>

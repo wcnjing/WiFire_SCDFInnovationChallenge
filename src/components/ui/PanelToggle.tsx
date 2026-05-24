@@ -9,7 +9,7 @@ interface Props {
 
 const PANEL_WIDTH = {
   left: 280,
-  right: 372,
+  right: 392,
 } as const;
 
 const CLOSED_GAP = 14;

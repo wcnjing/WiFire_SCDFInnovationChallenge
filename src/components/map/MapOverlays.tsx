@@ -21,7 +21,7 @@ export function AIBanner({ timeOffset, onClose }: { timeOffset: TimeOffset; onCl
       className="bg-white border border-surface-200 rounded-xl p-3 max-w-md shadow-md"
     >
       <div className="flex items-center gap-1.5 mb-1.5">
-        <span className="text-[10px] font-bold text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded tracking-wide">AI PREDICTION</span>
+        <span className="text-[10px] font-bold text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded tracking-wide">PROTOTYPE FORECAST</span>
         <Brain size={13} className="text-violet-400" />
         {onClose && (
           <button
@@ -36,7 +36,7 @@ export function AIBanner({ timeOffset, onClose }: { timeOffset: TimeOffset; onCl
       </div>
       <p className="text-xs text-slate-600 leading-relaxed">{AI_PREDICTIONS[timeOffset]}</p>
       <p className="text-[10px] text-slate-400 mt-1.5">
-        Confidence: {confidence}% | Updated {elapsed === 0 ? "just now" : `${elapsed * 15}s ago`}
+        Forecast confidence: {confidence}% | Updated {elapsed === 0 ? "just now" : `${elapsed * 15}s ago`}
       </p>
     </motion.div>
   );
@@ -94,10 +94,10 @@ export function FloatingAlert({ visible, message }: { visible: boolean; message:
           transition={{ duration: 0.35 }}
           className="bg-white border border-surface-200 rounded-xl px-3.5 py-2.5 shadow-lg max-w-[280px]"
         >
-          <div className="flex items-center gap-1 text-[11px] font-bold text-violet-600 mb-1">
-            <Zap size={12} />
-            AI ALERT
-          </div>
+        <div className="flex items-center gap-1 text-[11px] font-bold text-violet-600 mb-1">
+          <Zap size={12} />
+          FORECAST ALERT
+        </div>
           <p className="text-xs text-slate-600 leading-relaxed">{message}</p>
         </motion.div>
       )}

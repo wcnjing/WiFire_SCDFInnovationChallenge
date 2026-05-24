@@ -4,9 +4,11 @@ import { AI_INSIGHTS, FIRE_STATIONS, REGIONS } from "@/data/mock";
 import { useAppState } from "@/hooks/useAppState";
 import TopBar from "@/components/ui/TopBar";
 import PanelToggle from "@/components/ui/PanelToggle";
-import RightPanel from "@/components/panels/RightPanel";
+import CommandSummaryPanel from "@/components/panels/CommandSummaryPanel";
+import SupportingIntelligenceDrawer from "@/components/panels/SupportingIntelligenceDrawer";
+import type { SupportingIntelligenceTab } from "@/components/panels/SupportingIntelligenceTabs";
 import SingaporeMap from "@/components/map/SingaporeMap";
-import { AIBanner, FloatingAlert, MapLegend, TrafficCameraPreview } from "@/components/map/MapOverlays";
+import { MapLegend, TrafficCameraPreview } from "@/components/map/MapOverlays";
 import { useLTAIncidents, useLTASpeedBands, useLTATravelTimes } from "@/hooks/useLTAData";
 import { useLTATrafficImages } from "@/hooks/useLTATrafficImages";
 import { useOneMapRoute } from "@/hooks/useOneMapRoute";
@@ -105,9 +107,9 @@ export default function HomePage() {
   const [focusIncidentRequestKey, setFocusIncidentRequestKey] = useState(0);
   const [routeMode, setRouteMode] = useState<OneMapRouteMode>("drive");
   const [scenario, setScenario] = useState<ScenarioPreset>("normal");
-  const [showAIBanner, setShowAIBanner] = useState(true);
   const [showMapLegend, setShowMapLegend] = useState(true);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<RankedTrafficCameraSnapshot | null>(null);
+  const [supportingTab, setSupportingTab] = useState<SupportingIntelligenceTab>("route");
   const { data: ltaIncidents, loading: ltaIncidentsLoading, error: ltaIncidentsError, fetchedAt: ltaIncidentsFetchedAt } = useLTAIncidents();
   const { data: ltaSpeedBands, loading: ltaSpeedBandsLoading, error: ltaSpeedBandsError, fetchedAt: ltaSpeedBandsFetchedAt } = useLTASpeedBands();
   const { data: ltaTravelTimes, loading: ltaTravelTimesLoading, error: ltaTravelTimesError, fetchedAt: ltaTravelTimesFetchedAt } = useLTATravelTimes();
@@ -229,6 +231,15 @@ export default function HomePage() {
     if (state.showIncidents !== config.showIncidents) actions.toggleIncidents();
     actions.setIncidentType(config.incidentType);
   }, [actions, state.showIncidents, state.showTraffic, state.showWeather]);
+
+  const openSupportingDrawer = useCallback((tab: SupportingIntelligenceTab) => {
+    setSupportingTab(tab);
+    actions.setRightPanelOpen(true);
+  }, [actions]);
+
+  const closeSupportingDrawer = useCallback(() => {
+    actions.setRightPanelOpen(false);
+  }, [actions]);
 
   const neaStatus = getDatasetStatus({
     label: "NEA",
@@ -352,8 +363,23 @@ export default function HomePage() {
     () => (commandInsight ? [commandInsight, ...weatherModel.insights, ...AI_INSIGHTS] : [...weatherModel.insights, ...AI_INSIGHTS]),
     [commandInsight, weatherModel.insights],
   );
+  const headlineInsights = useMemo(
+    () => combinedInsights.filter((insight) => insight.id !== commandInsight?.id).slice(0, 2),
+    [combinedInsights, commandInsight?.id],
+  );
+  const focusStationWeatherImpact = useMemo(() => {
+    const focusStation = state.selectedStation ?? recommendedAction?.station ?? null;
+    return focusStation ? weatherModel.stationImpacts[focusStation.id] ?? null : null;
+  }, [recommendedAction?.station, state.selectedStation, weatherModel.stationImpacts]);
 
   const sourceStatuses: SourceStatus[] = [ltaStatus, neaStatus];
+
+  const openRecommendationEvidence = useCallback(() => {
+    if (recommendedAction && state.selectedStation?.id !== recommendedAction.station.id) {
+      actions.selectStation(recommendedAction.station);
+    }
+    openSupportingDrawer("route");
+  }, [actions, openSupportingDrawer, recommendedAction, state.selectedStation?.id]);
 
   useEffect(() => {
     if (mapTrafficCameras.length === 0) {
@@ -370,8 +396,34 @@ export default function HomePage() {
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <TopBar activeView={state.activeView} onViewChange={actions.setView} sourceStatuses={sourceStatuses} />
-      <div className="relative flex flex-1 overflow-hidden">
-        <div className="relative flex-1 overflow-hidden bg-surface-50">
+      <div className="relative flex flex-1 flex-col overflow-hidden lg:flex-row">
+        <CommandSummaryPanel
+          activeView={state.activeView}
+          selectedIncident={selectedRouteIncident}
+          selectedIncidentId={selectedRouteIncident?.id ?? routeIncidentId}
+          incidents={routeIncidents}
+          incidentType={state.incidentType}
+          selectedStation={state.selectedStation}
+          recommendedAction={recommendedAction}
+          stationWeatherImpact={focusStationWeatherImpact}
+          overallHealth={overallHealth}
+          avgResponseTime={avgResponseTime}
+          ltaStatus={ltaStatus}
+          ltaTravelTimes={activeLTATravelTimes}
+          oneMapRoute={oneMapRoute}
+          routeMode={routeMode}
+          timeOffset={state.timeOffset}
+          insights={headlineInsights}
+          weatherSummary={weatherModel.summary}
+          onTimeChange={actions.setTimeOffset}
+          onFocusStation={actions.selectStation}
+          onFocusIncident={focusIncidentOnMap}
+          onIncidentTypeChange={actions.setIncidentType}
+          onOpenRecommendationEvidence={openRecommendationEvidence}
+          onOpenSupportingTab={openSupportingDrawer}
+        />
+
+        <div className="relative min-h-[40vh] flex-1 overflow-hidden bg-surface-50 md:min-h-[48vh] lg:min-h-0">
           <div className="h-full w-full">
             <SingaporeMap
               stations={FIRE_STATIONS}
@@ -397,20 +449,16 @@ export default function HomePage() {
             />
           </div>
 
-          <div className="pointer-events-none absolute left-3 right-3 top-3 z-[1200] flex items-start justify-between">
-            <div className="pointer-events-auto flex flex-col gap-2">
-              {showAIBanner ? (
-                <AIBanner timeOffset={state.timeOffset} onClose={() => setShowAIBanner(false)} />
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowAIBanner(true)}
-                  className="rounded-full border border-surface-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-violet-600 shadow-sm transition-colors hover:bg-violet-50"
-                >
-                  Show AI Prediction
-                </button>
-              )}
-            </div>
+          <div className="pointer-events-none absolute right-3 top-3 z-[1200]">
+            {!state.rightPanelOpen && (
+              <button
+                type="button"
+                onClick={() => openSupportingDrawer("route")}
+                className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-surface-200 bg-white px-3.5 py-2 text-[11px] font-semibold text-slate-700 shadow-sm transition-colors hover:bg-surface-50"
+              >
+                Supporting Intelligence
+              </button>
+            )}
           </div>
 
           <div className="pointer-events-auto absolute bottom-3 left-3 z-[1200]">
@@ -437,25 +485,25 @@ export default function HomePage() {
               </div>
             </div>
           )}
-
-          <div className="absolute bottom-4 right-4 z-[1200]">
-            <FloatingAlert
-              visible={state.timeOffset >= 30}
-              message="Suggested standby repositioning: Alexandra Fire Station to Bukit Merah sector to maintain coverage."
-            />
-          </div>
         </div>
 
-        <PanelToggle side="right" isOpen={state.rightPanelOpen} onClick={actions.toggleRightPanel} />
+        <div className="hidden xl:block">
+          <PanelToggle
+            side="right"
+            isOpen={state.rightPanelOpen}
+            onClick={() => (state.rightPanelOpen ? closeSupportingDrawer() : openSupportingDrawer("route"))}
+          />
+        </div>
 
-        <RightPanel
+        <SupportingIntelligenceDrawer
           state={state}
           isOpen={state.rightPanelOpen}
+          activeTab={supportingTab}
           selectedStation={state.selectedStation}
+          selectedStationWeatherImpact={focusStationWeatherImpact}
           timeOffset={state.timeOffset}
           incidents={routeIncidents}
           insights={combinedInsights}
-          selectedStationWeatherImpact={state.selectedStation ? weatherModel.stationImpacts[state.selectedStation.id] ?? null : null}
           overallHealth={overallHealth}
           avgResponseTime={avgResponseTime}
           recommendedAction={recommendedAction}
@@ -464,11 +512,11 @@ export default function HomePage() {
           neaStatus={neaStatus}
           onFocusStation={actions.selectStation}
           onScenarioChange={applyScenario}
-          onTimeChange={actions.setTimeOffset}
+          onTabChange={setSupportingTab}
+          onClose={closeSupportingDrawer}
           onToggleTraffic={actions.toggleTraffic}
           onToggleWeather={actions.toggleWeather}
           onToggleIncidents={actions.toggleIncidents}
-          onIncidentTypeChange={actions.setIncidentType}
           weatherSummary={weatherModel.summary}
           weatherRegionImpacts={weatherModel.regionImpacts}
           routeIncidentId={selectedRouteIncident?.id ?? routeIncidentId}
@@ -479,7 +527,6 @@ export default function HomePage() {
           oneMapRouteLoading={oneMapRouteLoading}
           oneMapRouteError={oneMapRouteError}
           oneMapRouteFetchedAt={oneMapRouteFetchedAt}
-          onFocusIncident={focusIncidentOnMap}
           ltaTravelTimes={activeLTATravelTimes}
           ltaTravelTimesLoading={ltaTravelTimesLoading}
           ltaTravelTimesError={ltaTravelTimesError}

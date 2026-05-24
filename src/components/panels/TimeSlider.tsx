@@ -15,6 +15,9 @@ export default function TimeSlider({ value, onChange }: Props) {
         <Clock size={11} className="text-slate-400" />
         <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Prediction Window</span>
       </div>
+      <p className="mb-2 text-[11px] leading-relaxed text-slate-500">
+        Operational forecast horizon for the next 0 to 60 minutes.
+      </p>
       <div className="flex gap-1">
         {opts.map((o) => (
           <button key={o.value} onClick={() => onChange(o.value)}

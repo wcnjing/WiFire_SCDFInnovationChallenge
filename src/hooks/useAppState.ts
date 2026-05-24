@@ -6,7 +6,7 @@ import { calculateOverallHealth, calculateAvgResponseTime } from "@/lib/coverage
 
 const init: AppState = {
   activeView: "coverage", timeOffset: 0, selectedStation: null,
-  leftPanelOpen: true, rightPanelOpen: true,
+  leftPanelOpen: true, rightPanelOpen: false,
   showTraffic: true, showWeather: false, showIncidents: true,
   incidentType: "all",
 };
@@ -19,6 +19,7 @@ export function useAppState() {
     setView: useCallback((v: ViewMode) => set({ activeView: v, selectedStation: null }), []),
     setTimeOffset: useCallback((t: TimeOffset) => set({ timeOffset: t }), []),
     selectStation: useCallback((s: FireStation | null) => set({ selectedStation: s }), []),
+    setRightPanelOpen: useCallback((isOpen: boolean) => set({ rightPanelOpen: isOpen }), []),
     toggleLeftPanel: useCallback(() => setState((s) => ({ ...s, leftPanelOpen: !s.leftPanelOpen })), []),
     toggleRightPanel: useCallback(() => setState((s) => ({ ...s, rightPanelOpen: !s.rightPanelOpen })), []),
     toggleTraffic: useCallback(() => setState((s) => ({ ...s, showTraffic: !s.showTraffic })), []),

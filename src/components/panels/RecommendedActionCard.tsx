@@ -8,13 +8,22 @@ interface Props {
   selectedStation: FireStation | null;
   scenarioLabel: string;
   onFocusStation: (station: FireStation) => void;
+  onViewEvidence?: () => void;
+  evidenceLabel?: string;
 }
 
 function formatMinutes(value: number) {
   return `${value.toFixed(1)} min`;
 }
 
-export default function RecommendedActionCard({ action, selectedStation, scenarioLabel, onFocusStation }: Props) {
+export default function RecommendedActionCard({
+  action,
+  selectedStation,
+  scenarioLabel,
+  onFocusStation,
+  onViewEvidence,
+  evidenceLabel = "View evidence",
+}: Props) {
   if (!action) {
     return (
       <div className="rounded-2xl border border-surface-200 bg-white/95 p-4 shadow-sm">
@@ -80,16 +89,28 @@ export default function RecommendedActionCard({ action, selectedStation, scenari
             </div>
           )}
         </div>
-        {!isSelected && (
-          <button
-            type="button"
-            onClick={() => onFocusStation(action.station)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-brand-700 transition-colors hover:bg-brand-50"
-          >
-            Focus station
-            <ArrowRight size={12} />
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {onViewEvidence && (
+            <button
+              type="button"
+              onClick={onViewEvidence}
+              className="inline-flex items-center gap-1.5 rounded-full border border-surface-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition-colors hover:bg-surface-50"
+            >
+              {evidenceLabel}
+              <ArrowRight size={12} />
+            </button>
+          )}
+          {!isSelected && (
+            <button
+              type="button"
+              onClick={() => onFocusStation(action.station)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-brand-700 transition-colors hover:bg-brand-50"
+            >
+              Focus station
+              <ArrowRight size={12} />
+            </button>
+          )}
+        </div>
       </div>
     </motion.section>
   );
