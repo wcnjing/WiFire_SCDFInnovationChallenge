@@ -4,7 +4,7 @@ A Next.js / React / TypeScript dashboard for visualising Singapore Civil Defence
 
 ![POC_pictures](./Pictures/POC_PIcture.jpg)
 ![POC_3D](./Pictures/POC_3D.jpg)
-![dispatchweather.](./Pictures/dispatch_weather.jpg)
+![dispatchweather.](./Pictures/dispatch_weather)
 ![effectiveResponse](./Pictures/effectiveResponse.jpg)
 
 ## Quick Start
