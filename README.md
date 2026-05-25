@@ -97,6 +97,9 @@ The current urban context feature uses the public `data.gov.sg` GeoJSON dataset:
 
 No URA access key is required for the current implementation.
 
+## Architecture in Prose
+![Architecture diagram](./assets/RZTB_Mapper_System_Architecture.png)
+
 Important notes:
 
 - The main Singapore map remains the existing Leaflet / OneMap operational map.
