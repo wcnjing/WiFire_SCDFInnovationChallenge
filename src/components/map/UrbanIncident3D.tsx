@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { GeoJSONSource, LngLatBoundsLike, Map as MapboxMap, Marker, StyleSpecification } from "mapbox-gl";
-import { AlertTriangle, Boxes, Building2, Compass, Expand, LoaderCircle, Minimize2, Move3D, RefreshCcw, ZoomIn } from "lucide-react";
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { AlertTriangle, Boxes, Building2, Expand, LoaderCircle, Minimize2, Move3D, RefreshCcw, ZoomIn } from "lucide-react";
 import {
   getUrbanBuildingAddressLine,
   getUrbanBuildingDisplayLabel,
@@ -21,200 +22,512 @@ interface Props {
   onRefresh?: () => void | Promise<void>;
 }
 
-type BuildingFeatureCollection = {
-  type: "FeatureCollection";
-  features: Array<{
-    type: "Feature";
-    properties: {
-      id: string;
-      label: string;
-      displayLabel: string;
-      address: string;
-      height: number;
-      isIncidentBuilding: boolean;
-      isSelected: boolean;
-    };
-    geometry: {
-      type: "Polygon";
-      coordinates: [number, number][][];
-    };
-  }>;
+type SceneBlock = {
+  id: string;
+  label: string;
+  displayLabel: string;
+  address: string | null;
+  distanceFromIncidentMeters: number;
+  heightMeters: number;
+  heightCategory: UrbanBuildingContext["heightCategory"];
+  x: number;
+  z: number;
+  width: number;
+  depth: number;
+  height: number;
+  isIncidentBuilding: boolean;
+  isSelected: boolean;
 };
 
-type IncidentFeatureCollection = {
-  type: "FeatureCollection";
-  features: Array<{
-    type: "Feature";
-    properties: {
-      description: string;
-    };
-    geometry: {
-      type: "Point";
-      coordinates: [number, number];
-    };
-  }>;
+type SceneModel = {
+  blocks: SceneBlock[];
+  incidentBlock: SceneBlock | null;
+  selectedBlock: SceneBlock | null;
+  focusBlock: SceneBlock | null;
+  groundSize: number;
+  maxHeight: number;
 };
 
-const BUILDING_SOURCE_ID = "urban-context-buildings";
-const INCIDENT_SOURCE_ID = "urban-context-incident";
-const BUILDING_EXTRUSION_LAYER_ID = "urban-context-buildings-3d";
-const BUILDING_FOOTPRINT_LAYER_ID = "urban-context-buildings-footprints";
-const INCIDENT_GLOW_LAYER_ID = "urban-context-incident-glow";
-const INCIDENT_POINT_LAYER_ID = "urban-context-incident-point";
-
-const EMPTY_BUILDING_COLLECTION: BuildingFeatureCollection = {
-  type: "FeatureCollection",
-  features: [],
+type BlockTone = {
+  fill: number;
+  roof: string;
+  left: string;
+  right: string;
+  edge: number;
+  marker: string;
+  badgeClassName: string;
+  labelClassName: string;
 };
 
-const EMPTY_INCIDENT_COLLECTION: IncidentFeatureCollection = {
-  type: "FeatureCollection",
-  features: [],
-};
+type RenderMode = "three" | "fallback";
 
-const ONE_MAP_STYLE = {
-  version: 8,
-  name: "SCDF Urban Context 3D",
-  sources: {
-    onemap: {
-      type: "raster",
-      attribution: "Map tiles by OneMap Singapore",
-      tiles: ["https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png"],
-      tileSize: 256,
-      maxzoom: 19,
-    },
-  },
-  layers: [
-    {
-      id: "onemap-base",
-      type: "raster",
-      source: "onemap",
-      minzoom: 0,
-      maxzoom: 19,
-    },
-  ],
-} satisfies StyleSpecification;
+const MAX_SCENE_BUILDINGS = 12;
 
-function closePolygonRing(points: [number, number][]) {
-  if (points.length < 3) return null;
-
-  const ring = points.map(([lng, lat]) => [lng, lat] as [number, number]);
-  const [firstLng, firstLat] = ring[0];
-  const [lastLng, lastLat] = ring[ring.length - 1];
-
-  if (firstLng !== lastLng || firstLat !== lastLat) {
-    ring.push([firstLng, firstLat]);
-  }
-
-  return ring;
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
-function buildBuildingFeatureCollection(buildings: UrbanBuildingContext[], selectedBuildingId: string | null): BuildingFeatureCollection {
-  return {
-    type: "FeatureCollection",
-    features: buildings.flatMap((building) => {
-      const ring = closePolygonRing(building.coordinates);
-      if (!ring) return [];
+function simpleHash(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
 
-      return [{
-        type: "Feature",
-        properties: {
-          id: building.id,
-          label: getUrbanBuildingMapLabel(building),
-          displayLabel: getUrbanBuildingDisplayLabel(building),
-          address: getUrbanBuildingAddressLine(building) ?? "Address not available",
-          height: Math.max(building.estimatedHeight, 12),
-          isIncidentBuilding: building.isLikelyIncidentBuilding,
-          isSelected: building.id === selectedBuildingId,
-        },
-        geometry: {
-          type: "Polygon",
-          coordinates: [ring],
-        },
-      }];
-    }),
+function browserSupportsWebGL() {
+  if (typeof window === "undefined") return false;
+
+  try {
+    const canvas = document.createElement("canvas");
+    return Boolean(
+      window.WebGLRenderingContext
+      && (canvas.getContext("webgl") || canvas.getContext("experimental-webgl")),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function projectRelativeMeters(originLat: number, originLng: number, lat: number, lng: number) {
+  const averageLatRadians = (((originLat + lat) / 2) * Math.PI) / 180;
+  return {
+    x: (lng - originLng) * 111_320 * Math.cos(averageLatRadians),
+    z: -(lat - originLat) * 111_320,
   };
 }
 
-function buildIncidentFeatureCollection(incident: Incident | null): IncidentFeatureCollection {
-  if (!incident) return EMPTY_INCIDENT_COLLECTION;
+function heightFromCategory(category: UrbanBuildingContext["heightCategory"]) {
+  if (category === "High") return 48;
+  if (category === "Medium") return 30;
+  if (category === "Low") return 18;
+  return 22;
+}
+
+function getIndicativeHeightMeters(building: UrbanBuildingContext) {
+  const categoryHeight = heightFromCategory(building.heightCategory);
+  const measuredHeight = Number.isFinite(building.estimatedHeight) && building.estimatedHeight > 0
+    ? building.estimatedHeight
+    : categoryHeight;
+
+  if (building.isLikelyIncidentBuilding) {
+    return Math.max(measuredHeight, categoryHeight) + 4;
+  }
+
+  return Math.max(measuredHeight, categoryHeight);
+}
+
+function getFallbackFootprintSizeMeters(building: UrbanBuildingContext) {
+  const categoryBase = building.heightCategory === "High"
+    ? 34
+    : building.heightCategory === "Medium"
+      ? 26
+      : building.heightCategory === "Low"
+        ? 20
+        : 24;
+  const variationSeed = simpleHash(building.id) % 7;
+  const width = categoryBase + variationSeed;
+  const depth = Math.max(categoryBase * 0.78, 16) + (variationSeed % 4);
+
+  return { width, depth };
+}
+
+function measureFootprintAroundIncident(building: UrbanBuildingContext, incident: Incident) {
+  const fallbackSize = getFallbackFootprintSizeMeters(building);
+  const centroidMeters = projectRelativeMeters(incident.lat, incident.lng, building.centroid.lat, building.centroid.lng);
+
+  if (!Array.isArray(building.coordinates) || building.coordinates.length < 3) {
+    return {
+      centerX: centroidMeters.x,
+      centerZ: centroidMeters.z,
+      widthMeters: fallbackSize.width,
+      depthMeters: fallbackSize.depth,
+    };
+  }
+
+  const points = building.coordinates.map(([lng, lat]) => projectRelativeMeters(incident.lat, incident.lng, lat, lng));
+  const minX = Math.min(...points.map((point) => point.x));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const minZ = Math.min(...points.map((point) => point.z));
+  const maxZ = Math.max(...points.map((point) => point.z));
+  const widthMeters = maxX - minX;
+  const depthMeters = maxZ - minZ;
+
+  if (widthMeters < 4 || depthMeters < 4) {
+    return {
+      centerX: centroidMeters.x,
+      centerZ: centroidMeters.z,
+      widthMeters: fallbackSize.width,
+      depthMeters: fallbackSize.depth,
+    };
+  }
 
   return {
-    type: "FeatureCollection",
-    features: [{
-      type: "Feature",
-      properties: {
-        description: incident.desc,
-      },
-      geometry: {
-        type: "Point",
-        coordinates: [incident.lng, incident.lat],
-      },
-    }],
+    centerX: (minX + maxX) / 2,
+    centerZ: (minZ + maxZ) / 2,
+    widthMeters,
+    depthMeters,
   };
 }
 
-function getSceneBounds(buildings: UrbanBuildingContext[], incident: Incident | null): LngLatBoundsLike | null {
-  const points = buildings.flatMap((building) => building.coordinates);
-  if (incident) points.push([incident.lng, incident.lat]);
-  if (!points.length) return null;
-
-  let minLng = points[0][0];
-  let maxLng = points[0][0];
-  let minLat = points[0][1];
-  let maxLat = points[0][1];
-
-  for (const [lng, lat] of points) {
-    if (lng < minLng) minLng = lng;
-    if (lng > maxLng) maxLng = lng;
-    if (lat < minLat) minLat = lat;
-    if (lat > maxLat) maxLat = lat;
-  }
-
-  const lngPadding = Math.max((maxLng - minLng) * 0.2, 0.00028);
-  const latPadding = Math.max((maxLat - minLat) * 0.2, 0.00028);
-
-  return [
-    [minLng - lngPadding, minLat - latPadding],
-    [maxLng + lngPadding, maxLat + latPadding],
-  ];
-}
-
-function createBuildingLabelElement(
+function compareBlocksForPriority(
   building: UrbanBuildingContext,
-  isSelected: boolean,
-  onSelect: (buildingId: string) => void,
+  other: UrbanBuildingContext,
+  selectedBuildingId: string | null,
 ) {
-  const element = document.createElement("button");
-  element.type = "button";
-  element.textContent = getUrbanBuildingMapLabel(building);
-  element.setAttribute("aria-label", `Focus ${getUrbanBuildingDisplayLabel(building)}`);
+  const buildingPriority = Number(!(building.id === selectedBuildingId && building.isLikelyIncidentBuilding))
+    + Number(!(building.id === selectedBuildingId))
+    + Number(!building.isLikelyIncidentBuilding);
+  const otherPriority = Number(!(other.id === selectedBuildingId && other.isLikelyIncidentBuilding))
+    + Number(!(other.id === selectedBuildingId))
+    + Number(!other.isLikelyIncidentBuilding);
 
-  const baseClassName = "rounded-full border px-2.5 py-1 text-[10px] font-semibold tracking-wide shadow-[0_10px_24px_rgba(15,23,42,0.24)] backdrop-blur transition-transform hover:-translate-y-0.5";
-  if (building.isLikelyIncidentBuilding && isSelected) {
-    element.className = `${baseClassName} border-rose-200 bg-rose-500/95 text-white ring-2 ring-amber-200/80`;
-  } else if (building.isLikelyIncidentBuilding) {
-    element.className = `${baseClassName} border-rose-200 bg-rose-500/92 text-white`;
-  } else if (isSelected) {
-    element.className = `${baseClassName} border-amber-200 bg-amber-400/95 text-slate-950`;
-  } else {
-    element.className = `${baseClassName} border-slate-200/80 bg-slate-950/82 text-white`;
+  if (buildingPriority !== otherPriority) return buildingPriority - otherPriority;
+  if (building.distanceFromIncidentMeters !== other.distanceFromIncidentMeters) {
+    return building.distanceFromIncidentMeters - other.distanceFromIncidentMeters;
   }
 
-  element.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    onSelect(building.id);
+  return getUrbanBuildingDisplayLabel(building).localeCompare(getUrbanBuildingDisplayLabel(other));
+}
+
+function buildSceneModel(
+  buildings: UrbanBuildingContext[],
+  incident: Incident | null,
+  selectedBuildingId: string | null,
+): SceneModel {
+  if (!incident) {
+    return {
+      blocks: [],
+      incidentBlock: null,
+      selectedBlock: null,
+      focusBlock: null,
+      groundSize: 120,
+      maxHeight: 0,
+    };
+  }
+
+  const shortlisted = [...buildings]
+    .sort((left, right) => compareBlocksForPriority(left, right, selectedBuildingId))
+    .slice(0, MAX_SCENE_BUILDINGS);
+
+  if (!shortlisted.length) {
+    return {
+      blocks: [],
+      incidentBlock: null,
+      selectedBlock: null,
+      focusBlock: null,
+      groundSize: 120,
+      maxHeight: 0,
+    };
+  }
+
+  const rawBlocks = shortlisted.map((building) => {
+    const footprint = measureFootprintAroundIncident(building, incident);
+    return {
+      building,
+      ...footprint,
+      heightMeters: getIndicativeHeightMeters(building),
+    };
   });
 
-  return element;
+  const rawIncidentBlock = rawBlocks.find((block) => block.building.isLikelyIncidentBuilding) ?? rawBlocks[0];
+  const rawSelectedBlock = selectedBuildingId
+    ? rawBlocks.find((block) => block.building.id === selectedBuildingId) ?? null
+    : null;
+  const rawFocusBlock = rawSelectedBlock ?? rawIncidentBlock;
+
+  const minX = Math.min(...rawBlocks.map((block) => block.centerX - (block.widthMeters / 2)));
+  const maxX = Math.max(...rawBlocks.map((block) => block.centerX + (block.widthMeters / 2)));
+  const minZ = Math.min(...rawBlocks.map((block) => block.centerZ - (block.depthMeters / 2)));
+  const maxZ = Math.max(...rawBlocks.map((block) => block.centerZ + (block.depthMeters / 2)));
+  const spanMeters = Math.max(maxX - minX, maxZ - minZ, 70);
+  const horizontalScale = clamp(96 / spanMeters, 0.24, 1.08);
+  const verticalScale = 0.42;
+
+  const blocks = rawBlocks.map(({ building, centerX, centerZ, widthMeters, depthMeters, heightMeters }) => ({
+    id: building.id,
+    label: getUrbanBuildingMapLabel(building),
+    displayLabel: getUrbanBuildingDisplayLabel(building),
+    address: getUrbanBuildingAddressLine(building),
+    distanceFromIncidentMeters: building.distanceFromIncidentMeters,
+    heightMeters,
+    heightCategory: building.heightCategory,
+    x: (centerX - rawFocusBlock.centerX) * horizontalScale,
+    z: (centerZ - rawFocusBlock.centerZ) * horizontalScale,
+    width: clamp(widthMeters * horizontalScale, 7, 32),
+    depth: clamp(depthMeters * horizontalScale, 7, 32),
+    height: clamp(heightMeters * verticalScale, 8, 42),
+    isIncidentBuilding: building.isLikelyIncidentBuilding,
+    isSelected: building.id === selectedBuildingId,
+  }));
+
+  const maxFootprintExtent = blocks.reduce((maxExtent, block) => Math.max(
+    maxExtent,
+    Math.abs(block.x) + (block.width / 2),
+    Math.abs(block.z) + (block.depth / 2),
+  ), 36);
+  const groundSize = clamp((maxFootprintExtent * 2) + 32, 110, 180);
+  const maxHeight = blocks.reduce((highest, block) => Math.max(highest, block.height), 0);
+  const selectedBlock = blocks.find((block) => block.isSelected) ?? null;
+  const incidentBlock = blocks.find((block) => block.isIncidentBuilding) ?? selectedBlock ?? blocks[0] ?? null;
+  const focusBlock = selectedBlock ?? incidentBlock ?? blocks[0] ?? null;
+
+  return {
+    blocks,
+    incidentBlock,
+    selectedBlock,
+    focusBlock,
+    groundSize,
+    maxHeight,
+  };
 }
 
-function getBuildingLabelPriority(building: UrbanBuildingContext, selectedBuildingId: string | null) {
-  if (building.id === selectedBuildingId && building.isLikelyIncidentBuilding) return 0;
-  if (building.id === selectedBuildingId) return 1;
-  if (building.isLikelyIncidentBuilding) return 2;
-  return 3;
+function getSourceLabel(source: string, isFallback: boolean) {
+  if (isFallback) return "Fallback demo data";
+  if (source.toLowerCase().includes("data.gov.sg") || source.toLowerCase().includes("ura")) {
+    return "URA / data.gov.sg";
+  }
+  return source;
+}
+
+function getBlockTone(block: SceneBlock): BlockTone {
+  if (block.isIncidentBuilding && block.isSelected) {
+    return {
+      fill: 0xfb7185,
+      roof: "#fecdd3",
+      left: "#be123c",
+      right: "#f43f5e",
+      edge: 0xffedd5,
+      marker: "#fb7185",
+      badgeClassName: "border-rose-300/70 bg-rose-500/15 text-rose-100",
+      labelClassName: "border-rose-300/60 bg-rose-500/18 text-rose-50",
+    };
+  }
+
+  if (block.isIncidentBuilding) {
+    return {
+      fill: 0xf43f5e,
+      roof: "#fda4af",
+      left: "#9f1239",
+      right: "#e11d48",
+      edge: 0xfecdd3,
+      marker: "#fb7185",
+      badgeClassName: "border-rose-300/60 bg-rose-500/12 text-rose-100",
+      labelClassName: "border-rose-300/50 bg-rose-500/14 text-rose-50",
+    };
+  }
+
+  if (block.isSelected) {
+    return {
+      fill: 0xf59e0b,
+      roof: "#fde68a",
+      left: "#b45309",
+      right: "#d97706",
+      edge: 0xfde68a,
+      marker: "#f59e0b",
+      badgeClassName: "border-amber-300/60 bg-amber-400/14 text-amber-50",
+      labelClassName: "border-amber-300/55 bg-amber-400/18 text-amber-50",
+    };
+  }
+
+  return {
+    fill: 0x38bdf8,
+    roof: "#7dd3fc",
+    left: "#0f4c81",
+    right: "#0e7490",
+    edge: 0xb6e8ff,
+    marker: "#38bdf8",
+    badgeClassName: "border-cyan-300/40 bg-cyan-400/10 text-cyan-50",
+    labelClassName: "border-slate-600 bg-slate-950/85 text-slate-100",
+  };
+}
+
+function formatHeightLabel(block: SceneBlock | null) {
+  if (!block) return "No building selected";
+  return `${Math.round(block.heightMeters)} m (${block.heightCategory})`;
+}
+
+function selectBlock(
+  onSelectBuilding: Props["onSelectBuilding"],
+  buildingId: string,
+  options?: UrbanBuildingSelectionOptions,
+) {
+  onSelectBuilding?.(buildingId, options);
+}
+
+function buildLabelBlocks(blocks: SceneBlock[], selectedBuildingId: string | null, isFullscreen: boolean) {
+  const maxLabels = isFullscreen ? 5 : 3;
+  return [...blocks]
+    .sort((left, right) => {
+      const leftPriority = Number(!(left.id === selectedBuildingId && left.isIncidentBuilding))
+        + Number(!(left.id === selectedBuildingId))
+        + Number(!left.isIncidentBuilding);
+      const rightPriority = Number(!(right.id === selectedBuildingId && right.isIncidentBuilding))
+        + Number(!(right.id === selectedBuildingId))
+        + Number(!right.isIncidentBuilding);
+
+      if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+      if (left.distanceFromIncidentMeters !== right.distanceFromIncidentMeters) {
+        return left.distanceFromIncidentMeters - right.distanceFromIncidentMeters;
+      }
+
+      return left.displayLabel.localeCompare(right.displayLabel);
+    })
+    .slice(0, maxLabels);
+}
+
+function buildIsoPoint(x: number, z: number, y: number) {
+  const centerX = 170;
+  const baseY = 180;
+  return {
+    x: centerX + ((x - z) * 1.05),
+    y: baseY + ((x + z) * 0.54) - (y * 1.18),
+  };
+}
+
+function fallbackFacePath(points: Array<{ x: number; y: number }>) {
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ") + " Z";
+}
+
+function FallbackScene({
+  model,
+  isFallback,
+  onSelectBuilding,
+}: {
+  model: SceneModel;
+  isFallback: boolean;
+  onSelectBuilding?: (buildingId: string, options?: UrbanBuildingSelectionOptions) => void;
+}) {
+  const sortedBlocks = [...model.blocks].sort((left, right) => (left.x + left.z) - (right.x + right.z));
+
+  return (
+    <div className="relative h-full w-full">
+      <svg viewBox="0 0 340 232" className="h-full w-full" aria-label="Simplified 3D fallback incident context">
+        <rect x="0" y="0" width="340" height="232" fill="#020617" />
+        {[...Array(6)].map((_, index) => {
+          const offset = -56 + (index * 22);
+          const start = buildIsoPoint(-62, offset, 0);
+          const end = buildIsoPoint(62, offset, 0);
+          return (
+            <line
+              key={`grid-x-${offset}`}
+              x1={start.x}
+              y1={start.y}
+              x2={end.x}
+              y2={end.y}
+              stroke="#162338"
+              strokeWidth="1"
+            />
+          );
+        })}
+        {[...Array(6)].map((_, index) => {
+          const offset = -56 + (index * 22);
+          const start = buildIsoPoint(offset, -62, 0);
+          const end = buildIsoPoint(offset, 62, 0);
+          return (
+            <line
+              key={`grid-z-${offset}`}
+              x1={start.x}
+              y1={start.y}
+              x2={end.x}
+              y2={end.y}
+              stroke="#162338"
+              strokeWidth="1"
+            />
+          );
+        })}
+
+        {sortedBlocks.map((block) => {
+          const tone = getBlockTone(block);
+          const halfWidth = block.width / 2;
+          const halfDepth = block.depth / 2;
+          const top = {
+            nw: buildIsoPoint(block.x - halfWidth, block.z - halfDepth, block.height),
+            ne: buildIsoPoint(block.x + halfWidth, block.z - halfDepth, block.height),
+            se: buildIsoPoint(block.x + halfWidth, block.z + halfDepth, block.height),
+            sw: buildIsoPoint(block.x - halfWidth, block.z + halfDepth, block.height),
+          };
+          const base = {
+            nw: buildIsoPoint(block.x - halfWidth, block.z - halfDepth, 0),
+            ne: buildIsoPoint(block.x + halfWidth, block.z - halfDepth, 0),
+            se: buildIsoPoint(block.x + halfWidth, block.z + halfDepth, 0),
+            sw: buildIsoPoint(block.x - halfWidth, block.z + halfDepth, 0),
+          };
+
+          return (
+            <g
+              key={block.id}
+              role="button"
+              tabIndex={0}
+              aria-label={`Focus ${block.displayLabel}`}
+              className="cursor-pointer"
+              onClick={() => selectBlock(onSelectBuilding, block.id, { focusMap: true })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  selectBlock(onSelectBuilding, block.id, { focusMap: true });
+                }
+              }}
+            >
+              <path
+                d={fallbackFacePath([base.nw, base.sw, top.sw, top.nw])}
+                fill={tone.left}
+                stroke={block.isSelected ? "#fff7ed" : "#10233b"}
+                strokeWidth="1"
+              />
+              <path
+                d={fallbackFacePath([base.ne, base.se, top.se, top.ne])}
+                fill={tone.right}
+                stroke={block.isSelected ? "#fff7ed" : "#10233b"}
+                strokeWidth="1"
+              />
+              <path
+                d={fallbackFacePath([top.nw, top.ne, top.se, top.sw])}
+                fill={tone.roof}
+                stroke={block.isSelected ? "#ffffff" : "#dbeafe"}
+                strokeWidth={block.isSelected || block.isIncidentBuilding ? 1.4 : 1}
+              />
+            </g>
+          );
+        })}
+
+        {model.incidentBlock && (
+          <>
+            <line
+              x1={buildIsoPoint(model.incidentBlock.x, model.incidentBlock.z, model.incidentBlock.height).x}
+              y1={buildIsoPoint(model.incidentBlock.x, model.incidentBlock.z, model.incidentBlock.height).y}
+              x2={buildIsoPoint(model.incidentBlock.x, model.incidentBlock.z, model.incidentBlock.height + 16).x}
+              y2={buildIsoPoint(model.incidentBlock.x, model.incidentBlock.z, model.incidentBlock.height + 16).y}
+              stroke="#fecdd3"
+              strokeWidth="2"
+              strokeDasharray="4 4"
+            />
+            <circle
+              cx={buildIsoPoint(model.incidentBlock.x, model.incidentBlock.z, model.incidentBlock.height + 18).x}
+              cy={buildIsoPoint(model.incidentBlock.x, model.incidentBlock.z, model.incidentBlock.height + 18).y}
+              r="5"
+              fill="#fb7185"
+              stroke="#fff1f2"
+              strokeWidth="2"
+            />
+          </>
+        )}
+      </svg>
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+        <div className="rounded-full border border-slate-700 bg-slate-950/90 px-3 py-1 text-[10px] font-semibold text-slate-200">
+          SVG fallback renderer
+        </div>
+      </div>
+
+      {isFallback && (
+        <div className="absolute right-3 top-3 rounded-full border border-amber-400/40 bg-amber-400/12 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-amber-200">
+          Fallback demo data
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function UrbanIncident3D({
@@ -223,111 +536,39 @@ export default function UrbanIncident3D({
   loading,
   error,
   isFallback,
+  source,
   selectedBuildingId,
   onSelectBuilding,
   onRefresh,
 }: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<MapboxMap | null>(null);
-  const mapboxRef = useRef<typeof import("mapbox-gl").default | null>(null);
-  const labelMarkersRef = useRef<Marker[]>([]);
-  const lastSceneKeyRef = useRef<string | null>(null);
-  const lastFocusedBuildingIdRef = useRef<string | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
   const latestSelectBuildingRef = useRef<typeof onSelectBuilding>(onSelectBuilding);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [sceneReady, setSceneReady] = useState(false);
   const [sceneError, setSceneError] = useState<string | null>(null);
+  const [renderMode, setRenderMode] = useState<RenderMode>("three");
 
   useEffect(() => {
     latestSelectBuildingRef.current = onSelectBuilding;
   }, [onSelectBuilding]);
 
-  const effectiveSelectedBuilding = useMemo(
-    () => buildings.find((building) => building.id === selectedBuildingId) ?? null,
-    [buildings, selectedBuildingId],
+  const sceneModel = useMemo(
+    () => buildSceneModel(buildings, incident, selectedBuildingId),
+    [buildings, incident, selectedBuildingId],
   );
-  const effectiveSelectedBuildingId = effectiveSelectedBuilding?.id ?? null;
-  const incidentBuilding = useMemo(
-    () => buildings.find((building) => building.isLikelyIncidentBuilding)
-      ?? effectiveSelectedBuilding
-      ?? null,
-    [buildings, effectiveSelectedBuilding],
+  const labelBlocks = useMemo(
+    () => buildLabelBlocks(sceneModel.blocks, selectedBuildingId, isFullscreen),
+    [isFullscreen, sceneModel.blocks, selectedBuildingId],
   );
-  const sceneBuildings = useMemo(
-    () => buildBuildingFeatureCollection(buildings, effectiveSelectedBuildingId),
-    [buildings, effectiveSelectedBuildingId],
-  );
-  const sceneIncident = useMemo(
-    () => buildIncidentFeatureCollection(incident),
-    [incident],
-  );
-  const sceneBounds = useMemo(
-    () => getSceneBounds(buildings, incident),
-    [buildings, incident],
-  );
-  const sceneKey = useMemo(
-    () => `${incident?.id ?? "no-incident"}:${buildings.map((building) => building.id).join("|")}`,
-    [incident?.id, buildings],
-  );
-  const labelBuildings = useMemo(() => {
-    const maxVisibleLabels = isFullscreen ? 6 : 3;
-
-    return [...buildings]
-      .sort((left, right) => {
-        const priorityDifference = getBuildingLabelPriority(left, effectiveSelectedBuildingId)
-          - getBuildingLabelPriority(right, effectiveSelectedBuildingId);
-
-        if (priorityDifference !== 0) return priorityDifference;
-        if (left.distanceFromIncidentMeters !== right.distanceFromIncidentMeters) {
-          return left.distanceFromIncidentMeters - right.distanceFromIncidentMeters;
-        }
-        return getUrbanBuildingDisplayLabel(left).localeCompare(getUrbanBuildingDisplayLabel(right));
-      })
-      .slice(0, maxVisibleLabels);
-  }, [buildings, effectiveSelectedBuildingId, isFullscreen]);
-
-  function clearLabelMarkers() {
-    for (const marker of labelMarkersRef.current) {
-      marker.remove();
-    }
-    labelMarkersRef.current = [];
-  }
-
-  function syncLabelMarkers() {
-    const map = mapRef.current;
-    const mapboxgl = mapboxRef.current;
-    if (!map || !mapboxgl) return;
-
-    clearLabelMarkers();
-
-    for (const building of labelBuildings) {
-      const element = createBuildingLabelElement(
-        building,
-        building.id === effectiveSelectedBuildingId,
-        (buildingId) => latestSelectBuildingRef.current?.(buildingId, { focusMap: true }),
-      );
-
-      const marker = new mapboxgl.Marker({
-        element,
-        anchor: "bottom",
-        offset: [0, -12],
-      })
-        .setLngLat([building.centroid.lng, building.centroid.lat])
-        .addTo(map);
-
-      labelMarkersRef.current.push(marker);
-    }
-  }
+  const sourceLabel = useMemo(() => getSourceLabel(source, isFallback), [isFallback, source]);
 
   useEffect(() => {
     function handleFullscreenChange() {
-      const nextIsFullscreen = document.fullscreenElement === rootRef.current;
-      setIsFullscreen(nextIsFullscreen);
-      window.setTimeout(() => {
-        mapRef.current?.resize();
-      }, 120);
+      setIsFullscreen(document.fullscreenElement === rootRef.current);
     }
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -337,239 +578,358 @@ export default function UrbanIncident3D({
   }, []);
 
   useEffect(() => {
-    if (!incident || !containerRef.current) return;
+    if (!incident || !containerRef.current) {
+      setSceneReady(false);
+      return undefined;
+    }
 
     let cancelled = false;
     let resizeObserver: ResizeObserver | null = null;
 
     setSceneReady(false);
     setSceneError(null);
-    lastSceneKeyRef.current = null;
-    lastFocusedBuildingIdRef.current = null;
 
-    void (async () => {
-      try {
-        const mapboxModule = await import("mapbox-gl");
-        const mapboxgl = mapboxModule.default;
+    if (!browserSupportsWebGL()) {
+      setRenderMode("fallback");
+      setSceneError("WebGL unavailable. Showing simplified SVG fallback view.");
+      setSceneReady(true);
+      return undefined;
+    }
 
-        if (cancelled || !containerRef.current) return;
-        if (!mapboxgl.supported()) {
-          setSceneError("Interactive 3D view is not supported in this browser.");
+    try {
+      setRenderMode("three");
+
+      const container = containerRef.current;
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      rendererRef.current = renderer;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setClearColor(0x020617, 0);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      container.innerHTML = "";
+      container.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x020617);
+      scene.fog = new THREE.Fog(0x020617, 80, 210);
+
+      const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 1000);
+      const sceneGroup = new THREE.Group();
+      scene.add(sceneGroup);
+
+      scene.add(new THREE.AmbientLight(0xdbeafe, 1.5));
+
+      const keyLight = new THREE.DirectionalLight(0xffffff, 1.25);
+      keyLight.position.set(48, 66, 30);
+      scene.add(keyLight);
+
+      const fillLight = new THREE.DirectionalLight(0x7dd3fc, 0.85);
+      fillLight.position.set(-26, 24, -40);
+      scene.add(fillLight);
+
+      const warmLight = new THREE.DirectionalLight(0xf97316, 0.28);
+      warmLight.position.set(0, 16, 42);
+      scene.add(warmLight);
+
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(sceneModel.groundSize, sceneModel.groundSize),
+        new THREE.MeshStandardMaterial({
+          color: 0x08111f,
+          roughness: 0.96,
+          metalness: 0.05,
+        }),
+      );
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = -0.05;
+      sceneGroup.add(ground);
+
+      const grid = new THREE.GridHelper(sceneModel.groundSize, 10, 0x243244, 0x12202f);
+      grid.position.y = 0.02;
+      sceneGroup.add(grid);
+
+      const clickableMeshes: THREE.Mesh[] = [];
+      const disposableGeometries: THREE.BufferGeometry[] = [];
+      const disposableMaterials: THREE.Material[] = [];
+      const trackMaterial = (material: THREE.Material | THREE.Material[]) => {
+        if (Array.isArray(material)) {
+          disposableMaterials.push(...material);
           return;
         }
 
-        mapboxRef.current = mapboxgl;
+        disposableMaterials.push(material);
+      };
 
-        const map = new mapboxgl.Map({
-          container: containerRef.current,
-          style: ONE_MAP_STYLE,
-          center: [incident.lng, incident.lat],
-          zoom: 17.2,
-          pitch: 62,
-          bearing: -24,
-          antialias: true,
+      disposableGeometries.push(ground.geometry, grid.geometry);
+      trackMaterial(ground.material);
+      trackMaterial(grid.material);
+
+      const incidentMarkerGroup = new THREE.Group();
+      let incidentRing: THREE.Mesh | null = null;
+      let incidentBeacon: THREE.Mesh | null = null;
+
+      sceneModel.blocks.forEach((block) => {
+        const tone = getBlockTone(block);
+        const geometry = new THREE.BoxGeometry(block.width, block.height, block.depth);
+        const material = new THREE.MeshStandardMaterial({
+          color: tone.fill,
+          roughness: block.isIncidentBuilding ? 0.34 : 0.5,
+          metalness: block.isSelected ? 0.24 : 0.14,
+          emissive: block.isIncidentBuilding ? 0x2a0814 : block.isSelected ? 0x2a1400 : 0x04111f,
+          emissiveIntensity: block.isSelected || block.isIncidentBuilding ? 0.34 : 0.15,
         });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(block.x, block.height / 2, block.z);
+        mesh.userData = { buildingId: block.id };
+        sceneGroup.add(mesh);
+        clickableMeshes.push(mesh);
+        disposableGeometries.push(geometry);
+        disposableMaterials.push(material);
 
-        mapRef.current = map;
-        map.addControl(new mapboxgl.NavigationControl({ showCompass: true, visualizePitch: true }), "bottom-right");
+        const edges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(geometry),
+          new THREE.LineBasicMaterial({
+            color: tone.edge,
+            transparent: true,
+            opacity: block.isSelected || block.isIncidentBuilding ? 0.95 : 0.7,
+          }),
+        );
+        edges.position.copy(mesh.position);
+        sceneGroup.add(edges);
+        disposableGeometries.push(edges.geometry);
+        trackMaterial(edges.material);
 
-        map.on("load", () => {
-          if (cancelled) return;
+        const shadow = new THREE.Mesh(
+          new THREE.PlaneGeometry(block.width * 1.14, block.depth * 1.14),
+          new THREE.MeshBasicMaterial({
+            color: 0x020617,
+            transparent: true,
+            opacity: 0.22,
+          }),
+        );
+        shadow.rotation.x = -Math.PI / 2;
+        shadow.position.set(block.x + 1.6, 0.02, block.z + 2.3);
+        sceneGroup.add(shadow);
+        disposableGeometries.push(shadow.geometry);
+        trackMaterial(shadow.material);
 
-          map.addSource(BUILDING_SOURCE_ID, {
-            type: "geojson",
-            data: EMPTY_BUILDING_COLLECTION,
+        if (block.isIncidentBuilding) {
+          const ringGeometry = new THREE.TorusGeometry(Math.max(block.width, block.depth) * 0.46, 0.55, 14, 48);
+          const ringMaterial = new THREE.MeshBasicMaterial({
+            color: 0xfb7185,
+            transparent: true,
+            opacity: 0.95,
           });
-          map.addSource(INCIDENT_SOURCE_ID, {
-            type: "geojson",
-            data: EMPTY_INCIDENT_COLLECTION,
-          });
+          incidentRing = new THREE.Mesh(ringGeometry, ringMaterial);
+          incidentRing.rotation.x = -Math.PI / 2;
+          incidentRing.position.set(block.x, 0.14, block.z);
+          incidentMarkerGroup.add(incidentRing);
+          disposableGeometries.push(ringGeometry);
+          disposableMaterials.push(ringMaterial);
 
-          map.addLayer({
-            id: BUILDING_EXTRUSION_LAYER_ID,
-            type: "fill-extrusion",
-            source: BUILDING_SOURCE_ID,
-            paint: {
-              "fill-extrusion-base": 0,
-              "fill-extrusion-height": ["get", "height"],
-              "fill-extrusion-color": [
-                "case",
-                ["all", ["get", "isIncidentBuilding"], ["get", "isSelected"]],
-                "#fb7185",
-                ["get", "isIncidentBuilding"],
-                "#f43f5e",
-                ["get", "isSelected"],
-                "#f59e0b",
-                "#38bdf8",
-              ],
-              "fill-extrusion-opacity": 0.92,
-              "fill-extrusion-vertical-gradient": true,
-            },
+          const mastGeometry = new THREE.CylinderGeometry(0.18, 0.18, 12, 10);
+          const mastMaterial = new THREE.MeshStandardMaterial({
+            color: 0xfecdd3,
+            emissive: 0x43111d,
+            emissiveIntensity: 0.24,
           });
+          const mast = new THREE.Mesh(mastGeometry, mastMaterial);
+          mast.position.set(block.x, block.height + 6, block.z);
+          incidentMarkerGroup.add(mast);
+          disposableGeometries.push(mastGeometry);
+          disposableMaterials.push(mastMaterial);
 
-          map.addLayer({
-            id: BUILDING_FOOTPRINT_LAYER_ID,
-            type: "line",
-            source: BUILDING_SOURCE_ID,
-            paint: {
-              "line-color": [
-                "case",
-                ["all", ["get", "isIncidentBuilding"], ["get", "isSelected"]],
-                "#ffe4e6",
-                ["get", "isIncidentBuilding"],
-                "#fecdd3",
-                ["get", "isSelected"],
-                "#fde68a",
-                "#bfdbfe",
-              ],
-              "line-width": [
-                "case",
-                ["all", ["get", "isIncidentBuilding"], ["get", "isSelected"]],
-                3.5,
-                ["any", ["get", "isIncidentBuilding"], ["get", "isSelected"]],
-                2.8,
-                1.4,
-              ],
-              "line-opacity": 0.95,
-            },
+          const beaconGeometry = new THREE.SphereGeometry(1.7, 18, 18);
+          const beaconMaterial = new THREE.MeshStandardMaterial({
+            color: 0xfb7185,
+            emissive: 0xfb7185,
+            emissiveIntensity: 0.72,
+            metalness: 0.18,
+            roughness: 0.22,
           });
-
-          map.addLayer({
-            id: INCIDENT_GLOW_LAYER_ID,
-            type: "circle",
-            source: INCIDENT_SOURCE_ID,
-            paint: {
-              "circle-radius": 18,
-              "circle-color": "#fb7185",
-              "circle-opacity": 0.18,
-            },
-          });
-
-          map.addLayer({
-            id: INCIDENT_POINT_LAYER_ID,
-            type: "circle",
-            source: INCIDENT_SOURCE_ID,
-            paint: {
-              "circle-radius": 6,
-              "circle-color": "#f43f5e",
-              "circle-stroke-width": 2,
-              "circle-stroke-color": "#fff1f2",
-            },
-          });
-
-          map.on("mouseenter", BUILDING_EXTRUSION_LAYER_ID, () => {
-            map.getCanvas().style.cursor = "pointer";
-          });
-          map.on("mouseleave", BUILDING_EXTRUSION_LAYER_ID, () => {
-            map.getCanvas().style.cursor = "";
-          });
-          map.on("click", BUILDING_EXTRUSION_LAYER_ID, (event) => {
-            const buildingId = event.features?.[0]?.properties?.id;
-            if (typeof buildingId === "string") {
-              latestSelectBuildingRef.current?.(buildingId, { focusMap: true });
-            }
-          });
-
-          setSceneReady(true);
-        });
-
-        map.on("error", (event) => {
-          if (cancelled) return;
-          const message = event.error?.message ?? "3D scene could not load.";
-          if (!message.toLowerCase().includes("aborted")) {
-            setSceneError(message);
-          }
-        });
-
-        resizeObserver = new ResizeObserver(() => {
-          map.resize();
-        });
-        resizeObserver.observe(containerRef.current);
-      } catch (caughtError) {
-        if (!cancelled) {
-          setSceneError(
-            caughtError instanceof Error
-              ? caughtError.message
-              : "Interactive 3D scene could not be initialized.",
-          );
+          incidentBeacon = new THREE.Mesh(beaconGeometry, beaconMaterial);
+          incidentBeacon.position.set(block.x, block.height + 12, block.z);
+          incidentMarkerGroup.add(incidentBeacon);
+          disposableGeometries.push(beaconGeometry);
+          disposableMaterials.push(beaconMaterial);
         }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      resizeObserver?.disconnect();
-      clearLabelMarkers();
-      mapRef.current?.remove();
-      mapRef.current = null;
-      mapboxRef.current = null;
-      setSceneReady(false);
-    };
-  }, [incident?.desc, incident?.id, incident?.lat, incident?.lng]);
-
-  useEffect(() => {
-    if (!sceneReady || !mapRef.current) return;
-
-    const map = mapRef.current;
-    const buildingSource = map.getSource(BUILDING_SOURCE_ID) as GeoJSONSource | undefined;
-    const incidentSource = map.getSource(INCIDENT_SOURCE_ID) as GeoJSONSource | undefined;
-
-    buildingSource?.setData(sceneBuildings);
-    incidentSource?.setData(sceneIncident);
-    syncLabelMarkers();
-
-    if (sceneKey !== lastSceneKeyRef.current) {
-      if (sceneBounds) {
-        map.fitBounds(sceneBounds, {
-          padding: 52,
-          duration: 1200,
-          pitch: 62,
-          bearing: -24,
-        });
-      } else if (incident) {
-        map.flyTo({
-          center: [incident.lng, incident.lat],
-          zoom: 17.2,
-          pitch: 62,
-          bearing: -24,
-          duration: 1000,
-        });
-      }
-
-      lastSceneKeyRef.current = sceneKey;
-      lastFocusedBuildingIdRef.current = effectiveSelectedBuildingId;
-      return;
-    }
-
-    if (
-      effectiveSelectedBuilding
-      && effectiveSelectedBuilding.id !== lastFocusedBuildingIdRef.current
-    ) {
-      map.flyTo({
-        center: [effectiveSelectedBuilding.centroid.lng, effectiveSelectedBuilding.centroid.lat],
-        zoom: Math.max(map.getZoom(), 17.6),
-        pitch: Math.max(map.getPitch(), 60),
-        bearing: map.getBearing() === 0 ? -24 : map.getBearing(),
-        duration: 900,
-        essential: true,
       });
-      lastFocusedBuildingIdRef.current = effectiveSelectedBuilding.id;
+
+      sceneGroup.add(incidentMarkerGroup);
+
+      const focusBlock = sceneModel.focusBlock ?? sceneModel.incidentBlock ?? sceneModel.blocks[0] ?? null;
+      const focusTarget = new THREE.Vector3(
+        focusBlock?.x ?? 0,
+        Math.max((focusBlock?.height ?? 0) * 0.36, 8),
+        focusBlock?.z ?? 0,
+      );
+      const highestStructure = Math.max(sceneModel.maxHeight, 18);
+      const cameraDistance = Math.max(sceneModel.groundSize * 0.92, 86);
+      camera.position.copy(focusTarget).add(new THREE.Vector3(
+        cameraDistance * 0.72,
+        highestStructure + 48,
+        cameraDistance * 0.98,
+      ));
+      camera.lookAt(focusTarget);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.enablePan = true;
+      controls.screenSpacePanning = true;
+      controls.target.copy(focusTarget);
+      controls.minDistance = 28;
+      controls.maxDistance = Math.max(sceneModel.groundSize * 2.3, 210);
+      controls.minPolarAngle = Math.PI / 6;
+      controls.maxPolarAngle = Math.PI / 2.08;
+      controls.update();
+
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+      let pointerDownPosition: { x: number; y: number } | null = null;
+      let pointerDragged = false;
+
+      const updateRendererSize = () => {
+        if (!containerRef.current || !rendererRef.current) return;
+
+        const width = Math.max(containerRef.current.clientWidth, 1);
+        const height = Math.max(containerRef.current.clientHeight, 1);
+        rendererRef.current.setSize(width, height, false);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+      };
+
+      const getIntersections = (clientX: number, clientY: number) => {
+        const bounds = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((clientX - bounds.left) / bounds.width) * 2 - 1;
+        pointer.y = -(((clientY - bounds.top) / bounds.height) * 2 - 1);
+        raycaster.setFromCamera(pointer, camera);
+        return raycaster.intersectObjects(clickableMeshes, false);
+      };
+
+      const handlePointerDown = (event: PointerEvent) => {
+        pointerDownPosition = { x: event.clientX, y: event.clientY };
+        pointerDragged = false;
+        renderer.domElement.style.cursor = "grabbing";
+      };
+
+      const handlePointerMove = (event: PointerEvent) => {
+        if (pointerDownPosition) {
+          const deltaX = event.clientX - pointerDownPosition.x;
+          const deltaY = event.clientY - pointerDownPosition.y;
+          if (Math.sqrt((deltaX ** 2) + (deltaY ** 2)) > 5) {
+            pointerDragged = true;
+          }
+        }
+
+        const intersects = getIntersections(event.clientX, event.clientY);
+        if (pointerDragged) {
+          renderer.domElement.style.cursor = event.buttons === 2 ? "grabbing" : "grab";
+          return;
+        }
+
+        renderer.domElement.style.cursor = intersects.length > 0 ? "pointer" : "grab";
+      };
+
+      const handlePointerLeave = () => {
+        renderer.domElement.style.cursor = "";
+      };
+
+      const handleContextMenu = (event: MouseEvent) => {
+        event.preventDefault();
+      };
+
+      const handlePointerUp = (event: PointerEvent) => {
+        const wasDragged = pointerDragged;
+        pointerDownPosition = null;
+        pointerDragged = false;
+
+        const intersects = getIntersections(event.clientX, event.clientY);
+        renderer.domElement.style.cursor = intersects.length > 0 ? "pointer" : "grab";
+
+        if (wasDragged) return;
+
+        const buildingId = intersects[0]?.object.userData?.buildingId;
+        if (typeof buildingId === "string") {
+          latestSelectBuildingRef.current?.(buildingId, { focusMap: true });
+        }
+      };
+
+      renderer.domElement.style.cursor = "grab";
+      renderer.domElement.addEventListener("pointerdown", handlePointerDown);
+      renderer.domElement.addEventListener("pointermove", handlePointerMove);
+      renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
+      renderer.domElement.addEventListener("pointerup", handlePointerUp);
+      renderer.domElement.addEventListener("contextmenu", handleContextMenu);
+
+      const renderLoop = (timestamp: number) => {
+        if (cancelled) return;
+
+        const t = timestamp * 0.001;
+
+        if (incidentRing) {
+          const ringScale = 1 + (Math.sin(t * 2.4) * 0.06);
+          incidentRing.scale.set(ringScale, ringScale, ringScale);
+        }
+
+        if (incidentBeacon && sceneModel.incidentBlock) {
+          incidentBeacon.position.y = sceneModel.incidentBlock.height + 12 + (Math.sin(t * 2.8) * 1.1);
+        }
+
+        controls.update();
+        renderer.render(scene, camera);
+        animationFrameRef.current = window.requestAnimationFrame(renderLoop);
+      };
+
+      updateRendererSize();
+      animationFrameRef.current = window.requestAnimationFrame(renderLoop);
+      setSceneReady(true);
+
+      resizeObserver = new ResizeObserver(() => {
+        updateRendererSize();
+      });
+      resizeObserver.observe(container);
+
+      return () => {
+        renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
+        renderer.domElement.removeEventListener("pointermove", handlePointerMove);
+        renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
+        renderer.domElement.removeEventListener("pointerup", handlePointerUp);
+        renderer.domElement.removeEventListener("contextmenu", handleContextMenu);
+        controls.dispose();
+
+        disposableGeometries.forEach((geometry) => geometry.dispose());
+        disposableMaterials.forEach((material) => material.dispose());
+
+        if (animationFrameRef.current != null) {
+          window.cancelAnimationFrame(animationFrameRef.current);
+          animationFrameRef.current = null;
+        }
+
+        resizeObserver?.disconnect();
+        renderer.dispose();
+        if (renderer.domElement.parentNode === container) {
+          container.removeChild(renderer.domElement);
+        }
+        rendererRef.current = null;
+      };
+    } catch (caughtError) {
+      setRenderMode("fallback");
+      setSceneError(
+        caughtError instanceof Error
+          ? `${caughtError.message} Showing simplified SVG fallback view.`
+          : "Unable to initialize WebGL scene. Showing simplified SVG fallback view.",
+      );
+      setSceneReady(true);
+      return undefined;
     }
-  }, [
-    buildings,
-    effectiveSelectedBuilding,
-    effectiveSelectedBuildingId,
-    incident,
-    sceneBounds,
-    sceneBuildings,
-    sceneIncident,
-    sceneKey,
-    sceneReady,
-    labelBuildings,
-  ]);
+  }, [incident, sceneModel]);
 
   useEffect(() => () => {
-    clearLabelMarkers();
+    if (animationFrameRef.current != null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    rendererRef.current?.dispose();
+    rendererRef.current = null;
   }, []);
 
   async function handleToggleFullscreen() {
@@ -594,7 +954,7 @@ export default function UrbanIncident3D({
   if (!incident) {
     return (
       <div className="rounded-2xl border border-slate-800 bg-slate-950/95 p-4 text-[11px] text-slate-400">
-        Select an incident to load indicative urban context.
+        Select an incident to generate simplified 3D urban context.
       </div>
     );
   }
@@ -612,19 +972,22 @@ export default function UrbanIncident3D({
             <div className="flex items-center gap-2">
               <Building2 size={14} className="text-cyan-300" />
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                3D building scene
+                Simplified 3D Urban Context
               </div>
-              {isFallback && (
-                <div className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-200">
-                  Fallback demo data
+              <div className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-200">
+                {sourceLabel}
+              </div>
+              {renderMode === "fallback" && (
+                <div className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-200">
+                  SVG fallback
                 </div>
               )}
             </div>
             <div className="mt-2 text-sm font-semibold text-white">
-              {incidentBuilding ? getUrbanBuildingDisplayLabel(incidentBuilding) : incident.desc}
+              Incident #{incident.id}: {incident.desc}
             </div>
             <div className="mt-1 text-[11px] text-slate-400">
-              Full 3D navigation with a cleaner map-first view. Select a block to sync it back to the main map.
+              Operational context layer generated around the selected incident. Building heights are indicative where exact height is unavailable.
             </div>
           </div>
 
@@ -655,19 +1018,45 @@ export default function UrbanIncident3D({
             ref={containerRef}
             className="w-full"
             style={{ height: isFullscreen ? "calc(100vh - 260px)" : "360px" }}
-          />
+          >
+            {renderMode === "fallback" && (
+              <FallbackScene
+                model={sceneModel}
+                isFallback={isFallback}
+                onSelectBuilding={latestSelectBuildingRef.current}
+              />
+            )}
+          </div>
+
+          {labelBlocks.length > 0 && (
+            <div className="absolute left-3 top-3 flex max-w-[70%] flex-wrap gap-2">
+              {labelBlocks.map((block) => {
+                const tone = getBlockTone(block);
+                return (
+                  <button
+                    key={block.id}
+                    type="button"
+                    onClick={() => selectBlock(onSelectBuilding, block.id, { focusMap: true })}
+                    className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold tracking-wide shadow-[0_10px_24px_rgba(15,23,42,0.24)] backdrop-blur transition-transform hover:-translate-y-0.5 ${tone.labelClassName}`}
+                  >
+                    {block.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {(!sceneReady || loading || sceneError || error) && (
             <div className="absolute inset-x-3 bottom-3 rounded-xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[10px] text-slate-300">
-              {!sceneReady ? (
+              {!sceneReady && renderMode === "three" ? (
                 <span className="flex items-center gap-2">
                   <LoaderCircle size={12} className="animate-spin text-cyan-300" />
-                  Initializing interactive 3D map...
+                  Initializing tokenless 3D scene...
                 </span>
               ) : loading ? (
                 <span className="flex items-center gap-2">
                   <LoaderCircle size={12} className="animate-spin text-cyan-300" />
-                  Loading building footprints and labels...
+                  Loading nearby building context...
                 </span>
               ) : (sceneError || error) ? (
                 <span className="flex items-center gap-2">
@@ -682,11 +1071,11 @@ export default function UrbanIncident3D({
         <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-slate-300">
           <div className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1">
             <Move3D size={11} className="text-cyan-300" />
-            Drag to pan
+            Left drag to orbit
           </div>
           <div className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1">
-            <Compass size={11} className="text-amber-300" />
-            Right drag to rotate
+            <Building2 size={11} className="text-amber-300" />
+            Right drag to pan
           </div>
           <div className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1">
             <ZoomIn size={11} className="text-emerald-300" />
@@ -696,34 +1085,24 @@ export default function UrbanIncident3D({
 
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           <div className="rounded-xl border border-slate-800 bg-slate-900/75 px-3 py-2.5">
-            <div className="text-[9px] uppercase tracking-wide text-slate-500">Incident building</div>
+            <div className="text-[9px] uppercase tracking-wide text-slate-500">Incident Building</div>
             <div className="mt-1 text-[11px] font-semibold text-rose-100">
-              {incidentBuilding ? getUrbanBuildingDisplayLabel(incidentBuilding) : "Building not mapped"}
+              {sceneModel.incidentBlock ? sceneModel.incidentBlock.displayLabel : "Building not mapped"}
             </div>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900/75 px-3 py-2.5">
-            <div className="text-[9px] uppercase tracking-wide text-slate-500">Selected block</div>
-            <div className="mt-1 text-[11px] font-semibold text-cyan-200">
-              {effectiveSelectedBuilding ? getUrbanBuildingDisplayLabel(effectiveSelectedBuilding) : "None selected"}
-            </div>
-            <div className="mt-1 text-[10px] leading-relaxed text-slate-400">
-              {effectiveSelectedBuilding
-                ? getUrbanBuildingAddressLine(effectiveSelectedBuilding) ?? "Address not available"
-                : "Click a building in the 3D scene."}
+            <div className="text-[9px] uppercase tracking-wide text-slate-500">Nearby Buildings</div>
+            <div className="mt-1 text-[11px] font-semibold text-cyan-100">
+              {sceneModel.blocks.length} blocks in scene
             </div>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900/75 px-3 py-2.5">
             <div className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-slate-500">
               <Boxes size={11} className="text-slate-500" />
-              Labels visible
+              Indicative Height
             </div>
             <div className="mt-1 text-[11px] font-semibold text-slate-100">
-              {labelBuildings.length} of {buildings.length} blocks
-            </div>
-            <div className="mt-1 text-[10px] leading-relaxed text-slate-400">
-              {isFullscreen
-                ? "Fullscreen shows more surrounding block labels while keeping the map readable."
-                : "Only the key labels are shown here to keep the drawer uncluttered."}
+              {formatHeightLabel(sceneModel.selectedBlock ?? sceneModel.incidentBlock)}
             </div>
           </div>
         </div>

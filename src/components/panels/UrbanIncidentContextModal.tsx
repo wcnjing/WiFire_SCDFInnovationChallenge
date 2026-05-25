@@ -70,10 +70,10 @@ export default function UrbanIncidentContextModal({
                   Incident Focus Mode
                 </div>
                 <div className="mt-1 text-sm font-semibold text-slate-900">
-                  3D Urban Context
+                  3D Incident Building Context
                 </div>
                 <div className="mt-0.5 text-[11px] text-slate-500">
-                  Expanded building-scene view for the currently selected incident.
+                  Expanded simplified urban context for the currently selected incident.
                 </div>
               </div>
 

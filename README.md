@@ -29,6 +29,8 @@ ONEMAP_API_TOKEN=your_onemap_access_token_here
 
 If you use a single LTA DataMall account key for all traffic features, you can place the same value in both `LTA_API_KEY` and `LTA_ACCOUNT_KEY`.
 
+No Mapbox token is required. The main operational map remains Leaflet with OneMap tiles, and the incident-side 3D context uses a tokenless Three.js prototype renderer with an SVG fallback.
+
 ## Tech Stack
 
 | Layer | Tech |
@@ -36,7 +38,7 @@ If you use a single LTA DataMall account key for all traffic features, you can p
 | Framework | Next.js 14 (App Router) |
 | UI | React 18, TypeScript, TailwindCSS |
 | Animation | Framer Motion 11 |
-| Maps | OneMap basemap with Leaflet, LTA overlays, and OneMap routing |
+| Maps | OneMap basemap with Leaflet, LTA overlays, OneMap routing, and Three.js incident context |
 | Icons | Lucide React |
 
 ## Project Structure
@@ -61,6 +63,7 @@ src/
 - LTA traffic camera snapshots for congestion evidence and AI explainability
 - OneMap route planner for drive, walk, and cycle modes
 - Indicative urban/building context from the public URA building dataset on data.gov.sg
+- Simplified 3D incident building context using Three.js with no Mapbox dependency
 - Coverage and response-time operational views
 - Weather-aware station penalties using live NEA feeds
 - Incident filtering, KPI cards, and AI insight panels
@@ -96,9 +99,13 @@ No URA access key is required for the current implementation.
 
 Important notes:
 
+- The main Singapore map remains the existing Leaflet / OneMap operational map.
+- The right-panel and modal 3D incident context use Three.js and do not require a Mapbox token.
 - The URA feature provides simplified urban/building context. It does not generate exact real-time 3D building reconstructions.
 - The dashboard fetches the public dataset download URL from `data.gov.sg`, then filters nearby building footprints around the selected incident.
+- Building blocks are generated around the selected incident and use indicative building heights where exact heights are unavailable.
 - If the dataset is unavailable or parsing fails, the dashboard uses fallback demo building blocks so the UI remains usable.
+- If WebGL is unavailable or Three.js cannot initialize, the dashboard falls back to a simplified SVG pseudo-3D block view.
 - The feature is intended as an indicative urban context and operational context layer for response planning.
 - The feature does not identify residents, occupants, individual units, faces, or vehicles.
 

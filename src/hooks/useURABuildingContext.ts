@@ -24,6 +24,7 @@ export function useURABuildingContext(
   });
   const mountedRef = useRef(true);
   const requestRef = useRef(0);
+  const lastQueryKeyRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     if (latitude == null || longitude == null) {
@@ -39,11 +40,15 @@ export function useURABuildingContext(
       return;
     }
 
+    const queryKey = `${latitude.toFixed(6)}:${longitude.toFixed(6)}:${Math.round(radius)}`;
+    const isNewLocation = lastQueryKeyRef.current !== queryKey;
     const requestId = ++requestRef.current;
+    lastQueryKeyRef.current = queryKey;
 
     if (mountedRef.current) {
       setState((current) => ({
         ...current,
+        buildings: isNewLocation ? [] : current.buildings,
         loading: true,
         error: null,
       }));
