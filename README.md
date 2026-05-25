@@ -2,10 +2,10 @@
 
 A Next.js / React / TypeScript dashboard for visualising Singapore Civil Defence Force emergency response coverage, live traffic impacts, weather disruptions, and route-aware response planning.
 
-![Architecture diagram](./Pictures/POC_Picture.png)
-![Architecture diagram](./Pictures/POC_3D.png)
-![Architecture diagram](./Pictures/dispatchweather.png)
-![Architecture diagram](./Pictures/effectiveResponse.png)
+![POC_pictures](./Pictures/POC_Picture.png)
+![POC_3D](./Pictures/POC_3D.png)
+![dispatchweather.](./Pictures/dispatchweather.png)
+![effectiveResponse](./Pictures/effectiveResponse.png)
 
 ## Quick Start
 
