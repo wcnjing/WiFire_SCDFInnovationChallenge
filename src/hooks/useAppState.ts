@@ -32,7 +32,9 @@ export function useAppState() {
     return INCIDENTS.filter((i) => {
       if (state.incidentType === "all") return true;
       if (state.incidentType === "fire") return i.type === "fire";
-      return i.type === "medical";
+      if (state.incidentType === "medical") return i.type === "medical";
+      if (state.incidentType === "cardiac") return i.type === "medical";
+      return true;
     });
   }, [state.incidentType]);
 

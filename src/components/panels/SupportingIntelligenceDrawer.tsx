@@ -27,6 +27,7 @@ import AIInsightsList from "@/components/panels/AIInsightsList";
 import TrafficCameraPanel from "@/components/panels/TrafficCameraPanel";
 import UrbanIncidentContextCard from "@/components/panels/UrbanIncidentContextCard";
 import ResponseCorridor3D from "@/components/map/ResponseCorridor3D";
+import ModelCoveragePanel from "@/components/panels/ModelCoveragePanel";
 import SupportingIntelligenceTabs, { type SupportingIntelligenceTab } from "@/components/panels/SupportingIntelligenceTabs";
 
 interface Props {
@@ -430,6 +431,8 @@ export default function SupportingIntelligenceDrawer({
                       maxItems={3}
                     />
                   </SectionShell>
+
+                  <ModelCoveragePanel />
                 </div>
               )}
 

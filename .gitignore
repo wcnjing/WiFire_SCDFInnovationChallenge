@@ -5,3 +5,13 @@ node_modules
 !.env.local.example
 .next
 *.tsbuildinfo
+
+# Python model
+model/.env
+model/data/processed/sg_road_network.pkl
+model/data/raw/
+model/data/cache/
+model/src/__pycache__/
+model/notebooks/.ipynb_checkpoints/
+__pycache__/
+*.pyc

@@ -109,7 +109,7 @@ export default function HomePage() {
   const [focusedIncidentId, setFocusedIncidentId] = useState<number | null>(null);
   const [focusIncidentRequestKey, setFocusIncidentRequestKey] = useState(0);
   const [routeMode, setRouteMode] = useState<OneMapRouteMode>("drive");
-  const scenario: ScenarioPreset = "normal";
+  const [scenario, setScenario] = useState<ScenarioPreset>("normal");
   const [showMapLegend, setShowMapLegend] = useState(true);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<RankedTrafficCameraSnapshot | null>(null);
   const [supportingTab, setSupportingTab] = useState<SupportingIntelligenceTab>("evidence");

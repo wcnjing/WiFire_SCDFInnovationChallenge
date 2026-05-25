@@ -35,7 +35,7 @@ const corridorTone = {
   },
 } as const;
 
-export default function ResponseCorridor3D(_: Props) {
+export default function ResponseCorridor3D({ selectedStation, incidents, selectedIncidentId }: Props) {
   return (
     <section className="rounded-2xl border border-surface-200 bg-white/95 p-3 shadow-sm">
       <div className="flex items-center gap-2">
