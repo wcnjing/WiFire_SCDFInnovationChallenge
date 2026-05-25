@@ -2,7 +2,7 @@
 
 A Next.js / React / TypeScript dashboard for visualising Singapore Civil Defence Force emergency response coverage, live traffic impacts, weather disruptions, and route-aware response planning.
 
-**Live Demo:** [https://wi-fire-scdf-innovation-challenge-7926vyydx-wcnjings-projects.vercel.app/]([https://wi-fire-scdf-innovation-challenge-7926vyydx-wcnjings-projects.vercel.app/](https://wi-fire-scdf-innovation-challenge.vercel.app?_vercel_share=c57p8pZq9PLy1GCjR1t34anALhP8wtTj))
+**Live Demo:** [https://wi-fire-scdf-innovation-challenge-7926vyydx-wcnjings-projects.vercel.app/]([https://wi-fire-scdf-innovation-challenge-7926vyydx-wcnjings-projects.vercel.app/](https://wi-fire-scdf-innovation-challenge.vercel.app?_vercel_share=c57p8pZq9PLy1GCjR1t34anALhP8wtTj)
 
 ![POC_pictures](./Pictures/POC_PIcture.jpg)
 ![POC_3D](./Pictures/POC_3D.jpg)
